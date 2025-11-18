@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+*.coverage
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment variables
+.env
+.env.*
+
+# Bytecode + cache
+*.DS_Store
+
+# FastAPI / Alembic
+alembic/__pycache__/
+backend/app/__pycache__/
+backend/__pycache__/
+
+alembic/versions/*.pyc
+# Ignore Alembic compiled files
+
+# Node / Frontend (if used)
+node_modules/
+dist/
+build/
+.next/
+
+# Docker
+# DO NOT VERSION-CONTROL POSTGRES DATABASE STORAGE
+infra/postgres-data/
+
+# Docker build cache
+docker-cache/
+*.tar
+
+# Logs
+*.log
+logs/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
