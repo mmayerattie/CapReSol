@@ -9,5 +9,7 @@ class Settings:
         "DATABASE_URL",
         "postgresql+psycopg2://postgres:postgres@localhost:5432/capresol"
     )
+    IDEALISTA_API_KEY: str = os.getenv("IDEALISTA_API_KEY", "")
+    IDEALISTA_SECRET: str = os.getenv("IDEALISTA_SECRET", "")
 
 settings = Settings()
