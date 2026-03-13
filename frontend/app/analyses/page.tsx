@@ -101,6 +101,7 @@ function LinkedPricePair({ labelTotal, labelPsqm, total, psqm, sqm, onTotalChang
 
 export default function AnalysesPage() {
   const [analyses, setAnalyses] = useState<Analysis[]>([])
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<FormState>(EMPTY)
   const [purchasePsqm, setPurchasePsqm] = useState(0)
@@ -196,31 +197,82 @@ export default function AnalysesPage() {
               <th className="px-4 py-3 text-right">IRR</th>
               <th className="px-4 py-3 text-right">MOIC</th>
               <th className="px-4 py-3 text-right">ROE</th>
+              <th className="px-4 py-3 w-8"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {analyses.length === 0 && (
               <tr>
-                <td colSpan={10} className="text-center py-10 text-gray-400">
+                <td colSpan={11} className="text-center py-10 text-gray-400">
                   No hay análisis guardados — pulsa &quot;+ Nuevo Análisis&quot;
                 </td>
               </tr>
             )}
             {analyses.map(a => (
-              <tr key={a.id} className="hover:bg-gray-50">
-                <td className="px-4 py-2 font-medium">{a.name}</td>
-                <td className="px-4 py-2 text-right">{fmt(a.size_sqm)}</td>
-                <td className="px-4 py-2 text-right">€{fmt(a.purchase_price)}</td>
-                <td className="px-4 py-2 text-right">€{fmt(a.capex_total)}</td>
-                <td className="px-4 py-2 text-right">{a.project_months}</td>
-                <td className="px-4 py-2 text-right">€{fmt(a.exit_price_per_sqm)}</td>
-                <td className={`px-4 py-2 text-right font-semibold ${a.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                  €{fmt(a.profit)}
-                </td>
-                <td className="px-4 py-2 text-right font-semibold text-blue-700">{pct(a.irr)}</td>
-                <td className="px-4 py-2 text-right">{a.moic.toFixed(2)}x</td>
-                <td className="px-4 py-2 text-right">{pct(a.return_on_equity)}</td>
-              </tr>
+              <>
+                <tr key={a.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setExpandedId(prev => prev === a.id ? null : a.id)}>
+                  <td className="px-4 py-2 font-medium">{a.name}</td>
+                  <td className="px-4 py-2 text-right">{fmt(a.size_sqm)}</td>
+                  <td className="px-4 py-2 text-right">€{fmt(a.purchase_price)}</td>
+                  <td className="px-4 py-2 text-right">€{fmt(a.capex_total)}</td>
+                  <td className="px-4 py-2 text-right">{a.project_months}</td>
+                  <td className="px-4 py-2 text-right">€{fmt(a.exit_price_per_sqm)}</td>
+                  <td className={`px-4 py-2 text-right font-semibold ${a.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                    €{fmt(a.profit)}
+                  </td>
+                  <td className="px-4 py-2 text-right font-semibold text-blue-700">{pct(a.irr)}</td>
+                  <td className="px-4 py-2 text-right">{a.moic.toFixed(2)}x</td>
+                  <td className="px-4 py-2 text-right">{pct(a.return_on_equity)}</td>
+                  <td className="px-4 py-2 text-gray-400 text-xs">{expandedId === a.id ? '▼' : '▶'}</td>
+                </tr>
+                {expandedId === a.id && (
+                  <tr key={`detail-${a.id}`}>
+                    <td colSpan={11} className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                      <div className="grid grid-cols-4 gap-x-8 gap-y-3 text-sm">
+                        {/* Col 1: Propiedad */}
+                        <div>
+                          <p className="text-[10px] text-gray-400 uppercase font-semibold mb-2">Propiedad</p>
+                          <div className="space-y-1">
+                            <p className="text-xs text-gray-600">Superficie: <span className="font-medium text-gray-800">{fmt(a.size_sqm)} m²</span></p>
+                            <p className="text-xs text-gray-600">Compra total: <span className="font-medium text-gray-800">€{fmt(a.purchase_price)}</span></p>
+                            <p className="text-xs text-gray-600">Compra €/m²: <span className="font-medium text-gray-800">€{a.size_sqm ? fmt(a.purchase_price / a.size_sqm) : '—'}</span></p>
+                            <p className="text-xs text-gray-600">Gastos cierre: <span className="font-medium text-gray-800">€{fmt(a.closing_costs)}</span></p>
+                          </div>
+                        </div>
+                        {/* Col 2: Reforma */}
+                        <div>
+                          <p className="text-[10px] text-gray-400 uppercase font-semibold mb-2">Reforma</p>
+                          <div className="space-y-1">
+                            <p className="text-xs text-gray-600">Capex: <span className="font-medium text-gray-800">€{fmt(a.capex_total)}</span></p>
+                            <p className="text-xs text-gray-600">Duración proyecto: <span className="font-medium text-gray-800">{a.project_months} meses</span></p>
+                          </div>
+                        </div>
+                        {/* Col 3: Salida */}
+                        <div>
+                          <p className="text-[10px] text-gray-400 uppercase font-semibold mb-2">Salida</p>
+                          <div className="space-y-1">
+                            <p className="text-xs text-gray-600">Precio salida €/m²: <span className="font-medium text-gray-800">€{fmt(a.exit_price_per_sqm)}</span></p>
+                            <p className="text-xs text-gray-600">Precio salida bruto: <span className="font-medium text-gray-800">€{fmt(a.gross_exit_price)}</span></p>
+                            <p className="text-xs text-gray-600">Precio salida neto: <span className="font-medium text-gray-800">€{fmt(a.net_exit_price)}</span></p>
+                            <p className="text-xs text-gray-600">Fee broker salida: <span className="font-medium text-gray-800">€{fmt(a.broker_fee)}</span></p>
+                          </div>
+                        </div>
+                        {/* Col 4: Financiación */}
+                        <div>
+                          <p className="text-[10px] text-gray-400 uppercase font-semibold mb-2">Financiación</p>
+                          <div className="space-y-1">
+                            <p className="text-xs text-gray-600">LTV hipoteca: <span className="font-medium text-gray-800">{a.mortgage_ltv != null ? (a.mortgage_ltv * 100).toFixed(0) + '%' : '—'}</span></p>
+                            <p className="text-xs text-gray-600">Deuda hipoteca: <span className="font-medium text-gray-800">€{fmt(a.mortgage_debt)}</span></p>
+                            <p className="text-xs text-gray-600">Deuda total: <span className="font-medium text-gray-800">€{fmt(a.total_debt)}</span></p>
+                            <p className="text-xs text-gray-600">Equity máximo: <span className="font-medium text-gray-800">€{fmt(a.max_equity_exposure)}</span></p>
+                            <p className="text-xs text-gray-600">Coste total proyecto: <span className="font-medium text-gray-800">€{fmt(a.total_dev_cost)}</span></p>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>

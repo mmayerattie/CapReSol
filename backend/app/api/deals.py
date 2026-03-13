@@ -5,11 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db import models
-from app.api.schemas import DealRead, DealCreate, PredictRequest, PredictionRead
+from app.api.schemas import DealRead, DealCreate, PredictRequest, PredictionRead, PredictionWithDeal
 from app.services.extraction import create_deal_from_payload
 from app.services.portal_scraper import (
     scrape_idealista_api,
     scrape_idealista_html,
+    scrape_redpiso_html,
+    scrape_fotocasa_firecrawl,
+    scrape_pisos_firecrawl,
     ingest_listings,
 )
 from app.ml.features import deal_to_features
@@ -25,6 +28,33 @@ def list_deals(db: Session = Depends(get_db)):
     return db.query(models.Deal).order_by(models.Deal.created_at.desc()).all()
 
 
+@router.get("/predictions", response_model=List[PredictionWithDeal])
+def list_predictions(db: Session = Depends(get_db)):
+    """Return all predictions with their associated deal data, newest first."""
+    rows = (
+        db.query(models.Prediction, models.Deal)
+        .join(models.Deal, models.Prediction.deal_id == models.Deal.id)
+        .order_by(models.Prediction.created_at.desc())
+        .all()
+    )
+    result = []
+    for pred, deal in rows:
+        result.append(PredictionWithDeal(
+            id=str(pred.id),
+            deal_id=str(pred.deal_id),
+            predicted_price=pred.predicted_price,
+            model_version=pred.model_version,
+            created_at=pred.created_at,
+            address=deal.address,
+            district=deal.district,
+            size_sqm=deal.size_sqm,
+            asking_price=deal.asking_price,
+            condition=deal.condition,
+            url=deal.url,
+        ))
+    return result
+
+
 @router.post("/from-message", response_model=DealRead)
 def create_deal_from_message(payload: DealCreate, db: Session = Depends(get_db)):
     try:
@@ -37,13 +67,14 @@ def create_deal_from_message(payload: DealCreate, db: Session = Depends(get_db))
 # ---------- Scraping ----------
 
 class ScrapeParams(BaseModel):
+    portal: str = "idealista"           # "idealista", "redpiso", "fotocasa", or "pisos"
     operation: str = "sale"             # "sale" or "rent"
     property_type: str = "homes"        # "homes", "offices", "premises", "garages", "bedrooms"
     max_pages: int = 10                 # each page = 1 API request (50 results). Max 100/month total.
+    page_from: int = 1                  # starting page (for chunked Redpiso scraping)
     max_price: Optional[int] = None
     min_price: Optional[int] = None
     bedrooms: Optional[int] = None
-    use_html_fallback: bool = False     # True = skip API, use HTML scraper
 
 
 class ScrapeResult(BaseModel):
@@ -61,13 +92,36 @@ def scrape_portal(params: ScrapeParams, db: Session = Depends(get_db)):
     Each page costs 1 request and returns up to 50 listings.
     Set use_html_fallback=true to use the HTML scraper instead (no quota cost).
     """
-    if params.use_html_fallback:
-        operation_html = "venta" if params.operation == "sale" else "alquiler"
-        listings = scrape_idealista_html(
-            operation=operation_html,
+    if params.portal == "redpiso":
+        operation_es = "venta" if params.operation == "sale" else "alquiler"
+        listings = scrape_redpiso_html(
+            operation=operation_es,
+            page_from=params.page_from,
             max_pages=params.max_pages,
         )
-        source = "html"
+        source = "redpiso"
+    elif params.portal == "fotocasa":
+        operation_fc = "comprar" if params.operation == "sale" else "alquiler"
+        listings = scrape_fotocasa_firecrawl(
+            operation=operation_fc,
+            page_from=params.page_from,
+            max_pages=params.max_pages,
+        )
+        source = "fotocasa"
+    elif params.portal == "pisos":
+        operation_pisos = "venta" if params.operation == "sale" else "alquiler"
+        listings = scrape_pisos_firecrawl(
+            operation=operation_pisos,
+            page_from=params.page_from,
+            max_pages=params.max_pages,
+        )
+        source = "pisos"
+    elif params.portal == "idealista_html":
+        listings = scrape_idealista_html(
+            page_from=params.page_from,
+            max_pages=params.max_pages,
+        )
+        source = "idealista_html"
     else:
         listings = scrape_idealista_api(
             operation=params.operation,
@@ -77,7 +131,7 @@ def scrape_portal(params: ScrapeParams, db: Session = Depends(get_db)):
             min_price=params.min_price,
             bedrooms=params.bedrooms,
         )
-        source = "api"
+        source = "idealista_api"
 
     inserted = ingest_listings(db, listings)
 

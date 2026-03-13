@@ -80,11 +80,23 @@ export async function getDeals(): Promise<Deal[]> {
   return res.json()
 }
 
-export async function scrapeDeals(): Promise<{ listings_fetched: number; new_deals_inserted: number }> {
+export async function scrapeDeals(
+  portal: 'idealista' | 'redpiso' | 'fotocasa' | 'pisos' | 'idealista_html' = 'idealista',
+  pageFrom = 1,
+): Promise<{ source: string; listings_fetched: number; new_deals_inserted: number }> {
+  const body = portal === 'redpiso'
+    ? { portal: 'redpiso', page_from: pageFrom, max_pages: 9 }
+    : portal === 'fotocasa'
+    ? { portal: 'fotocasa', page_from: pageFrom, max_pages: 3 }
+    : portal === 'pisos'
+    ? { portal: 'pisos', page_from: pageFrom, max_pages: 3 }
+    : portal === 'idealista_html'
+    ? { portal: 'idealista_html', page_from: pageFrom, max_pages: 3 }
+    : { portal: 'idealista', max_pages: 10 }
   const res = await fetch(`${BASE}/deals/scrape`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ use_html_fallback: true, max_pages: 2 }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Scrape failed')
   return res.json()
@@ -116,5 +128,70 @@ export async function createAnalysis(data: FlipInput): Promise<Analysis> {
     const body = await res.json().catch(() => ({}))
     throw new Error(body?.detail ?? `HTTP ${res.status}`)
   }
+  return res.json()
+}
+
+export interface DistrictStats {
+  district: string
+  count: number
+  avg_price_sqm: number | null
+  avg_size_sqm: number | null
+  pct_renew: number
+  pct_good: number
+  pct_new: number
+  avg_price_renew: number | null
+  avg_price_good: number | null
+  reform_upside: number | null
+  ml_vs_ask_avg: number | null
+}
+
+export interface ConditionByDistrict {
+  district: string
+  renew: number
+  good: number
+  new: number
+}
+
+export interface AnalyticsStats {
+  total_deals: number
+  deals_with_prediction: number
+  market_avg_price_sqm: number | null
+  by_district: DistrictStats[]
+  condition_by_district: ConditionByDistrict[]
+  price_histogram: { bucket: string; count: number }[]
+  size_histogram: { bucket: string; count: number }[]
+  bedrooms_distribution: { bedrooms: number; count: number }[]
+  amenities: { elevator: number; terrace: number; balcony: number; garage: number; storage_room: number }
+  listed_over_time: { month: string; count: number }[]
+  portfolio_summary: { total_analyses: number; avg_irr: number | null; avg_moic: number | null; avg_roe: number | null }
+}
+
+export async function getAnalyticsStats(maxPriceSqm?: number, minPriceSqm?: number): Promise<AnalyticsStats> {
+  const params = new URLSearchParams()
+  if (maxPriceSqm != null) params.set('max_price_sqm', String(maxPriceSqm))
+  if (minPriceSqm != null) params.set('min_price_sqm', String(minPriceSqm))
+  const qs = params.toString()
+  const res = await fetch(`${BASE}/analytics${qs ? `?${qs}` : ''}`)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export interface PredictionWithDeal {
+  id: string
+  deal_id: string
+  predicted_price: number
+  model_version?: string
+  created_at: string
+  address?: string
+  district?: string
+  size_sqm?: number
+  asking_price?: number
+  condition?: string
+  url?: string
+}
+
+export async function getPredictions(): Promise<PredictionWithDeal[]> {
+  const res = await fetch(`${BASE}/deals/predictions`)
+  if (!res.ok) throw new Error('Failed to fetch predictions')
   return res.json()
 }

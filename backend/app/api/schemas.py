@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # ---------- Messages ----------
@@ -140,3 +140,18 @@ class PredictionRead(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PredictionWithDeal(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deal_id: str
+    predicted_price: float
+    model_version: Optional[str] = None
+    created_at: datetime
+    address: Optional[str] = None
+    district: Optional[str] = None
+    size_sqm: Optional[float] = None
+    asking_price: Optional[float] = None
+    condition: Optional[str] = None
+    url: Optional[str] = None

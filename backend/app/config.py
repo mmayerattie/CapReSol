@@ -11,5 +11,6 @@ class Settings:
     )
     IDEALISTA_API_KEY: str = os.getenv("IDEALISTA_API_KEY", "")
     IDEALISTA_SECRET: str = os.getenv("IDEALISTA_SECRET", "")
+    FIRECRAWL_API_KEY: str = os.getenv("FIRECRAWL_API_KEY", "")
 
 settings = Settings()
