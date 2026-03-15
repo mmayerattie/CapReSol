@@ -8,9 +8,41 @@ function fmt(n?: number, decimals = 0) {
   return n.toLocaleString('es-ES', { maximumFractionDigits: decimals })
 }
 
+function getSource(url?: string): string {
+  if (!url) return '—'
+  if (url.includes('idealista.com')) return 'Idealista'
+  if (url.includes('redpiso.es')) return 'Redpiso'
+  if (url.includes('fotocasa.es')) return 'Fotocasa'
+  if (url.includes('pisos.com')) return 'Pisos.com'
+  return 'Manual'
+}
+
+const ALL_COLUMNS = [
+  { key: 'address', label: 'Dirección' },
+  { key: 'district', label: 'Distrito' },
+  { key: 'zone', label: 'Zona' },
+  { key: 'size_sqm', label: 'm²' },
+  { key: 'bedrooms', label: 'Hab.' },
+  { key: 'bathrooms', label: 'Baños' },
+  { key: 'floor', label: 'Planta' },
+  { key: 'asking_price', label: 'Precio' },
+  { key: 'price_per_sqm', label: '€/m²' },
+  { key: 'condition', label: 'Estado' },
+  { key: 'amenities', label: 'Amenidades' },
+  { key: 'source', label: 'Fuente' },
+  { key: 'listed_date', label: 'Fecha Listing' },
+] as const
+
+type ColKey = typeof ALL_COLUMNS[number]['key']
+
+const DEFAULT_VISIBLE: ColKey[] = [
+  'address', 'district', 'zone', 'size_sqm', 'bedrooms', 'bathrooms',
+  'floor', 'asking_price', 'price_per_sqm', 'condition', 'source', 'listed_date'
+]
+
 type SortField = 'size_sqm' | 'asking_price' | 'price_per_sqm'
 type SortDir = 'asc' | 'desc'
-type FilterKey = 'distrito' | 'habitaciones' | 'estado' | 'sqm' | 'precio'
+type FilterKey = 'distrito' | 'habitaciones' | 'banos' | 'estado' | 'sqm' | 'precio' | 'fuente' | 'amenidades' | 'planta'
 
 const CONDITION_BADGE: Record<string, { label: string; className: string }> = {
   newdevelopment: { label: 'Nueva', className: 'bg-emerald-100 text-emerald-700' },
@@ -162,6 +194,17 @@ export default function DealsPage() {
   const [filterDistricts, setFilterDistricts] = useState<Set<string>>(new Set())
   const [filterConditions, setFilterConditions] = useState<Set<string>>(new Set())
   const [filterBedrooms, setFilterBedrooms] = useState<Set<number>>(new Set())
+  const [filterBaths, setFilterBaths] = useState<Set<number>>(new Set())
+  const [filterSources, setFilterSources] = useState<Set<string>>(new Set())
+  const [filterFloors, setFilterFloors] = useState<Set<number>>(new Set())
+  const [filterElevator, setFilterElevator] = useState<boolean | null>(null)
+  const [filterTerrace, setFilterTerrace] = useState<boolean | null>(null)
+  const [filterGarage, setFilterGarage] = useState<boolean | null>(null)
+  const [filterIncludeNullCondition, setFilterIncludeNullCondition] = useState(false)
+  const [filterIncludeNullDistrict, setFilterIncludeNullDistrict] = useState(false)
+  const [filterIncludeNullBedrooms, setFilterIncludeNullBedrooms] = useState(false)
+  const [filterIncludeNullBaths, setFilterIncludeNullBaths] = useState(false)
+  const [filterIncludeNullSource, setFilterIncludeNullSource] = useState(false)
   const [filterSqmMin, setFilterSqmMin] = useState('')
   const [filterSqmMax, setFilterSqmMax] = useState('')
   const [filterPriceMin, setFilterPriceMin] = useState('')
@@ -175,6 +218,23 @@ export default function DealsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
 
+  const [visibleCols, setVisibleCols] = useState<ColKey[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_VISIBLE
+    try {
+      const saved = localStorage.getItem('deals_visible_cols')
+      return saved ? JSON.parse(saved) : DEFAULT_VISIBLE
+    } catch { return DEFAULT_VISIBLE }
+  })
+  const [showColPicker, setShowColPicker] = useState(false)
+
+  function toggleCol(key: ColKey) {
+    setVisibleCols(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+      localStorage.setItem('deals_visible_cols', JSON.stringify(next))
+      return next
+    })
+  }
+
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
       const target = e.target as Element
@@ -187,6 +247,16 @@ export default function DealsPage() {
   }, [])
 
   useEffect(() => {
+    if (!showColPicker) return
+    function handleClick(e: MouseEvent) {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-col-picker]')) setShowColPicker(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showColPicker])
+
+  useEffect(() => {
     getDeals()
       .then(setDeals)
       .catch(() => setFetchError('No se pudo conectar al backend. Asegúrate de que está corriendo en el puerto 8000.'))
@@ -194,7 +264,10 @@ export default function DealsPage() {
   }, [])
 
   useEffect(() => { setPage(1) }, [
-    filterDistricts, filterConditions, filterBedrooms,
+    filterDistricts, filterConditions, filterBedrooms, filterBaths, filterSources, filterFloors,
+    filterElevator, filterTerrace, filterGarage,
+    filterIncludeNullCondition, filterIncludeNullDistrict, filterIncludeNullBedrooms,
+    filterIncludeNullBaths, filterIncludeNullSource,
     filterSqmMin, filterSqmMax, filterPriceMin, filterPriceMax,
     sortField, sortDir, pageSize,
   ])
@@ -211,12 +284,71 @@ export default function DealsPage() {
     () => (Array.from(new Set(deals.map(d => d.bedrooms).filter(b => b != null))) as number[]).sort((a, b) => a - b),
     [deals]
   )
+  const allBaths = useMemo(
+    () => (Array.from(new Set(deals.map(d => d.bathrooms).filter(b => b != null))) as number[]).sort((a, b) => a - b),
+    [deals]
+  )
+  const allSources = useMemo(
+    () => ['Idealista', 'Redpiso', 'Fotocasa', 'Pisos.com', 'Manual'].filter(src =>
+      deals.some(d => getSource(d.url) === src)
+    ),
+    [deals]
+  )
+  const allFloors = useMemo(
+    () => (Array.from(new Set(deals.map(d => d.floor).filter(f => f != null))) as number[]).sort((a, b) => a - b),
+    [deals]
+  )
+  const nullConditionCount = useMemo(
+    () => deals.filter(d => d.condition == null || d.condition === '').length,
+    [deals]
+  )
+  const nullDistrictCount = useMemo(
+    () => deals.filter(d => d.district == null || d.district === '').length,
+    [deals]
+  )
+  const nullBedsCount = useMemo(() => deals.filter(d => d.bedrooms == null).length, [deals])
+  const nullBathsCount = useMemo(() => deals.filter(d => d.bathrooms == null).length, [deals])
 
   const visibleDeals = useMemo(() => {
     let result = deals.filter(d => {
-      if (filterDistricts.size > 0 && !filterDistricts.has(d.district ?? '')) return false
-      if (filterConditions.size > 0 && !filterConditions.has(d.condition ?? '')) return false
-      if (filterBedrooms.size > 0 && !filterBedrooms.has(d.bedrooms ?? -1)) return false
+      // District filter
+      if (filterDistricts.size > 0) {
+        const distMatch = filterDistricts.has(d.district ?? '')
+        const nullMatch = filterIncludeNullDistrict && (d.district == null || d.district === '')
+        if (!distMatch && !nullMatch) return false
+      }
+      // Estado filter
+      if (filterConditions.size > 0) {
+        const condMatch = filterConditions.has(d.condition ?? '')
+        const nullMatch = filterIncludeNullCondition && (d.condition == null || d.condition === '')
+        if (!condMatch && !nullMatch) return false
+      }
+      // Bedrooms filter
+      if (filterBedrooms.size > 0) {
+        const bedsMatch = d.bedrooms != null && filterBedrooms.has(d.bedrooms)
+        const nullMatch = filterIncludeNullBedrooms && d.bedrooms == null
+        if (!bedsMatch && !nullMatch) return false
+      }
+      // Bathrooms filter
+      if (filterBaths.size > 0) {
+        const bathsMatch = d.bathrooms != null && filterBaths.has(d.bathrooms)
+        const nullMatch = filterIncludeNullBaths && d.bathrooms == null
+        if (!bathsMatch && !nullMatch) return false
+      }
+      // Source filter
+      if (filterSources.size > 0) {
+        const src = getSource(d.url)
+        const srcMatch = filterSources.has(src)
+        const nullMatch = filterIncludeNullSource && src === '—'
+        if (!srcMatch && !nullMatch) return false
+      }
+      // Floor filter
+      if (filterFloors.size > 0 && !filterFloors.has(d.floor ?? -999)) return false
+      // Amenity filters
+      if (filterElevator !== null && d.elevator !== filterElevator) return false
+      if (filterTerrace !== null && d.terrace !== filterTerrace) return false
+      if (filterGarage !== null && d.garage !== filterGarage) return false
+      // Range filters
       if (filterSqmMin && (d.size_sqm ?? 0) < parseFloat(filterSqmMin)) return false
       if (filterSqmMax && (d.size_sqm ?? Infinity) > parseFloat(filterSqmMax)) return false
       if (filterPriceMin && (d.asking_price ?? 0) < parseFloat(filterPriceMin)) return false
@@ -236,7 +368,17 @@ export default function DealsPage() {
       })
     }
     return result
-  }, [deals, filterDistricts, filterConditions, filterBedrooms, filterSqmMin, filterSqmMax, filterPriceMin, filterPriceMax, sortField, sortDir])
+  }, [
+    deals,
+    filterDistricts, filterIncludeNullDistrict,
+    filterConditions, filterIncludeNullCondition,
+    filterBedrooms, filterIncludeNullBedrooms,
+    filterBaths, filterIncludeNullBaths,
+    filterSources, filterIncludeNullSource,
+    filterFloors, filterElevator, filterTerrace, filterGarage,
+    filterSqmMin, filterSqmMax, filterPriceMin, filterPriceMax,
+    sortField, sortDir,
+  ])
 
   const totalPages = pageSize === 0 ? 1 : Math.ceil(visibleDeals.length / pageSize)
   const pagedDeals = pageSize === 0 ? visibleDeals : visibleDeals.slice((page - 1) * pageSize, page * pageSize)
@@ -247,11 +389,20 @@ export default function DealsPage() {
   }
 
   const hasFilters = filterDistricts.size > 0 || filterConditions.size > 0 || filterBedrooms.size > 0
+    || filterBaths.size > 0 || filterSources.size > 0 || filterFloors.size > 0
     || filterSqmMin || filterSqmMax || filterPriceMin || filterPriceMax
+    || filterIncludeNullCondition || filterIncludeNullDistrict || filterIncludeNullBedrooms
+    || filterIncludeNullBaths || filterIncludeNullSource
+    || filterElevator !== null || filterTerrace !== null || filterGarage !== null
 
   function clearFilters() {
     setFilterDistricts(new Set()); setFilterConditions(new Set()); setFilterBedrooms(new Set())
+    setFilterBaths(new Set()); setFilterSources(new Set()); setFilterFloors(new Set())
     setFilterSqmMin(''); setFilterSqmMax(''); setFilterPriceMin(''); setFilterPriceMax('')
+    setFilterIncludeNullCondition(false); setFilterIncludeNullDistrict(false)
+    setFilterIncludeNullBedrooms(false); setFilterIncludeNullBaths(false)
+    setFilterIncludeNullSource(false)
+    setFilterElevator(null); setFilterTerrace(null); setFilterGarage(null)
   }
 
   function handleExportCSV() {
@@ -314,7 +465,7 @@ export default function DealsPage() {
             </button>
           )}
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
           <button onClick={handleExportCSV} title={`Exportar ${visibleDeals.length} deals a CSV`}
             className="px-3 py-2 border border-gray-300 text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50">
             ↓ CSV
@@ -323,6 +474,30 @@ export default function DealsPage() {
             className="px-3 py-2 border border-gray-300 text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50">
             ↓ Excel
           </button>
+          {/* Column picker */}
+          <div className="relative" data-col-picker>
+            <button
+              onClick={() => setShowColPicker(v => !v)}
+              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 border border-gray-300"
+            >
+              Columnas ⚙
+            </button>
+            {showColPicker && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg p-3 w-48">
+                {ALL_COLUMNS.map(col => (
+                  <label key={col.key} className="flex items-center gap-2 py-1 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={visibleCols.includes(col.key)}
+                      onChange={() => toggleCol(col.key)}
+                      className="rounded"
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -340,92 +515,201 @@ export default function DealsPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
                 <tr>
-                  <th className="px-4 py-3 text-left">Dirección</th>
+                  {visibleCols.includes('address') && <th className="px-4 py-3 text-left">Dirección</th>}
 
-                  <FilterTh label="Distrito" filterKey="distrito" openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    active={filterDistricts.size > 0}>
-                    <div className="max-h-52 overflow-y-auto">
-                      {allDistricts.map(d => (
-                        <label key={d} className={checkRowClass}>
-                          <input type="checkbox" className={checkboxClass}
-                            checked={filterDistricts.has(d)}
-                            onChange={() => setFilterDistricts(prev => toggleSet(prev, d))} />
-                          {d}
-                        </label>
-                      ))}
-                    </div>
-                  </FilterTh>
-
-                  <th className="px-4 py-3 text-left">Zona</th>
-
-                  <SortFilterTh label="m²" field="size_sqm" sortField={sortField} sortDir={sortDir} onSort={handleSort}
-                    filterKey="sqm" openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    active={!!(filterSqmMin || filterSqmMax)}>
-                    <div className="flex flex-col gap-1.5">
-                      <p className="text-[10px] text-gray-400 uppercase font-medium px-1">m²</p>
-                      <div className="flex items-center gap-1">
-                        <input type="number" placeholder="Min" value={filterSqmMin}
-                          onChange={e => setFilterSqmMin(e.target.value)}
-                          className="w-16 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                        <span className="text-gray-400 text-xs">–</span>
-                        <input type="number" placeholder="Max" value={filterSqmMax}
-                          onChange={e => setFilterSqmMax(e.target.value)}
-                          className="w-16 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  {visibleCols.includes('district') && (
+                    <FilterTh label="Distrito" filterKey="distrito" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={filterDistricts.size > 0 || filterIncludeNullDistrict}>
+                      <div className="max-h-52 overflow-y-auto">
+                        {allDistricts.map(d => (
+                          <label key={d} className={checkRowClass}>
+                            <input type="checkbox" className={checkboxClass}
+                              checked={filterDistricts.has(d)}
+                              onChange={() => setFilterDistricts(prev => toggleSet(prev, d))} />
+                            {d}
+                          </label>
+                        ))}
+                        {nullDistrictCount > 0 && (
+                          <label className={checkRowClass + ' mt-1 pt-1 border-t border-gray-100'}>
+                            <input type="checkbox" className={checkboxClass}
+                              checked={filterIncludeNullDistrict}
+                              onChange={() => setFilterIncludeNullDistrict(v => !v)} />
+                            <span className="text-gray-400 italic">Sin distrito ({nullDistrictCount})</span>
+                          </label>
+                        )}
                       </div>
-                    </div>
-                  </SortFilterTh>
+                    </FilterTh>
+                  )}
 
-                  <FilterTh label="Hab." filterKey="habitaciones" openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    active={filterBedrooms.size > 0} align="right">
-                    <div className="flex flex-wrap gap-1 px-1">
-                      {allBedrooms.map(b => (
-                        <label key={b} className="flex items-center gap-1 text-xs font-normal normal-case text-gray-700 cursor-pointer">
-                          <input type="checkbox" className={checkboxClass}
-                            checked={filterBedrooms.has(b)}
-                            onChange={() => setFilterBedrooms(prev => toggleSet(prev, b))} />
-                          {b}
-                        </label>
-                      ))}
-                    </div>
-                  </FilterTh>
+                  {visibleCols.includes('zone') && <th className="px-4 py-3 text-left">Zona</th>}
 
-                  <th className="px-4 py-3 text-right">Baños</th>
-                  <th className="px-4 py-3 text-right">Planta</th>
-
-                  <SortFilterTh label="Precio" field="asking_price" sortField={sortField} sortDir={sortDir} onSort={handleSort}
-                    filterKey="precio" openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    active={!!(filterPriceMin || filterPriceMax)}>
-                    <div className="flex flex-col gap-1.5">
-                      <p className="text-[10px] text-gray-400 uppercase font-medium px-1">Precio (€)</p>
-                      <div className="flex items-center gap-1">
-                        <input type="number" placeholder="Min" value={filterPriceMin}
-                          onChange={e => setFilterPriceMin(e.target.value)}
-                          className="w-24 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                        <span className="text-gray-400 text-xs">–</span>
-                        <input type="number" placeholder="Max" value={filterPriceMax}
-                          onChange={e => setFilterPriceMax(e.target.value)}
-                          className="w-24 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  {visibleCols.includes('size_sqm') && (
+                    <SortFilterTh label="m²" field="size_sqm" sortField={sortField} sortDir={sortDir} onSort={handleSort}
+                      filterKey="sqm" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={!!(filterSqmMin || filterSqmMax)}>
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-[10px] text-gray-400 uppercase font-medium px-1">m²</p>
+                        <div className="flex items-center gap-1">
+                          <input type="number" placeholder="Min" value={filterSqmMin}
+                            onChange={e => setFilterSqmMin(e.target.value)}
+                            className="w-16 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                          <span className="text-gray-400 text-xs">–</span>
+                          <input type="number" placeholder="Max" value={filterSqmMax}
+                            onChange={e => setFilterSqmMax(e.target.value)}
+                            className="w-16 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </div>
                       </div>
-                    </div>
-                  </SortFilterTh>
+                    </SortFilterTh>
+                  )}
 
-                  <SortTh label="€/m²" field="price_per_sqm" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-
-                  <FilterTh label="Estado" filterKey="estado" openFilter={openFilter} setOpenFilter={setOpenFilter}
-                    active={filterConditions.size > 0}>
-                    <div>
-                      {allConditions.map(c => (
-                        <label key={c} className={checkRowClass}>
+                  {visibleCols.includes('bedrooms') && (
+                    <FilterTh label="Hab." filterKey="habitaciones" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={filterBedrooms.size > 0 || filterIncludeNullBedrooms} align="right">
+                      <div className="flex flex-wrap gap-1 px-1">
+                        {allBedrooms.map(b => (
+                          <label key={b} className="flex items-center gap-1 text-xs font-normal normal-case text-gray-700 cursor-pointer">
+                            <input type="checkbox" className={checkboxClass}
+                              checked={filterBedrooms.has(b)}
+                              onChange={() => setFilterBedrooms(prev => toggleSet(prev, b))} />
+                            {b}
+                          </label>
+                        ))}
+                      </div>
+                      {nullBedsCount > 0 && (
+                        <label className="flex items-center gap-1 text-xs font-normal normal-case text-gray-400 italic cursor-pointer mt-1 pt-1 border-t border-gray-100 w-full px-1">
                           <input type="checkbox" className={checkboxClass}
-                            checked={filterConditions.has(c)}
-                            onChange={() => setFilterConditions(prev => toggleSet(prev, c))} />
-                          {CONDITION_BADGE[c]?.label ?? c}
+                            checked={filterIncludeNullBedrooms}
+                            onChange={() => setFilterIncludeNullBedrooms(v => !v)} />
+                          Sin datos ({nullBedsCount})
                         </label>
-                      ))}
-                    </div>
-                  </FilterTh>
+                      )}
+                    </FilterTh>
+                  )}
 
-                  <th className="px-4 py-3 text-left">Amenidades</th>
+                  {visibleCols.includes('bathrooms') && (
+                    <FilterTh label="Baños" filterKey="banos" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={filterBaths.size > 0 || filterIncludeNullBaths} align="right">
+                      <div className="flex flex-wrap gap-1 px-1">
+                        {allBaths.map(b => (
+                          <label key={b} className="flex items-center gap-1 text-xs font-normal normal-case text-gray-700 cursor-pointer">
+                            <input type="checkbox" className={checkboxClass}
+                              checked={filterBaths.has(b)}
+                              onChange={() => setFilterBaths(prev => toggleSet(prev, b))} />
+                            {b}
+                          </label>
+                        ))}
+                      </div>
+                      {nullBathsCount > 0 && (
+                        <label className="flex items-center gap-1 text-xs font-normal normal-case text-gray-400 italic cursor-pointer mt-1 pt-1 border-t border-gray-100 w-full px-1">
+                          <input type="checkbox" className={checkboxClass}
+                            checked={filterIncludeNullBaths}
+                            onChange={() => setFilterIncludeNullBaths(v => !v)} />
+                          Sin datos ({nullBathsCount})
+                        </label>
+                      )}
+                    </FilterTh>
+                  )}
+
+                  {visibleCols.includes('floor') && (
+                    <FilterTh label="Planta" filterKey="planta" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={filterFloors.size > 0} align="right">
+                      <div className="max-h-40 overflow-y-auto">
+                        {allFloors.map(f => (
+                          <label key={f} className={checkRowClass}>
+                            <input type="checkbox" className={checkboxClass}
+                              checked={filterFloors.has(f)}
+                              onChange={() => setFilterFloors(prev => toggleSet(prev, f))} />
+                            {f}
+                          </label>
+                        ))}
+                      </div>
+                    </FilterTh>
+                  )}
+
+                  {visibleCols.includes('asking_price') && (
+                    <SortFilterTh label="Precio" field="asking_price" sortField={sortField} sortDir={sortDir} onSort={handleSort}
+                      filterKey="precio" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={!!(filterPriceMin || filterPriceMax)}>
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-[10px] text-gray-400 uppercase font-medium px-1">Precio (€)</p>
+                        <div className="flex items-center gap-1">
+                          <input type="number" placeholder="Min" value={filterPriceMin}
+                            onChange={e => setFilterPriceMin(e.target.value)}
+                            className="w-24 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                          <span className="text-gray-400 text-xs">–</span>
+                          <input type="number" placeholder="Max" value={filterPriceMax}
+                            onChange={e => setFilterPriceMax(e.target.value)}
+                            className="w-24 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </div>
+                      </div>
+                    </SortFilterTh>
+                  )}
+
+                  {visibleCols.includes('price_per_sqm') && (
+                    <SortTh label="€/m²" field="price_per_sqm" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                  )}
+
+                  {visibleCols.includes('condition') && (
+                    <FilterTh label="Estado" filterKey="estado" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={filterConditions.size > 0 || filterIncludeNullCondition}>
+                      <div>
+                        {allConditions.map(c => (
+                          <label key={c} className={checkRowClass}>
+                            <input type="checkbox" className={checkboxClass}
+                              checked={filterConditions.has(c)}
+                              onChange={() => setFilterConditions(prev => toggleSet(prev, c))} />
+                            {CONDITION_BADGE[c]?.label ?? c}
+                          </label>
+                        ))}
+                        {nullConditionCount > 0 && (
+                          <label className={checkRowClass + ' mt-1 pt-1 border-t border-gray-100'}>
+                            <input type="checkbox" className={checkboxClass}
+                              checked={filterIncludeNullCondition}
+                              onChange={() => setFilterIncludeNullCondition(v => !v)} />
+                            <span className="text-gray-400 italic">Sin estado ({nullConditionCount})</span>
+                          </label>
+                        )}
+                      </div>
+                    </FilterTh>
+                  )}
+
+                  {visibleCols.includes('amenities') && (
+                    <FilterTh label="Amenidades" filterKey="amenidades" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={filterElevator !== null || filterTerrace !== null || filterGarage !== null}>
+                      <div className="space-y-1 px-1 text-xs font-normal normal-case text-gray-700">
+                        <p className="text-[10px] text-gray-400 uppercase font-medium mb-2">Mostrar solo con:</p>
+                        {([
+                          { label: 'Ascensor', state: filterElevator, setter: setFilterElevator },
+                          { label: 'Terraza', state: filterTerrace, setter: setFilterTerrace },
+                          { label: 'Garaje', state: filterGarage, setter: setFilterGarage },
+                        ] as const).map(({ label, state, setter }) => (
+                          <label key={label} className="flex items-center gap-2 py-0.5 cursor-pointer">
+                            <input type="checkbox" className={checkboxClass}
+                              checked={state === true}
+                              onChange={() => setter(prev => prev === true ? null : true)} />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </FilterTh>
+                  )}
+
+                  {visibleCols.includes('source') && (
+                    <FilterTh label="Fuente" filterKey="fuente" openFilter={openFilter} setOpenFilter={setOpenFilter}
+                      active={filterSources.size > 0 || filterIncludeNullSource}>
+                      <div>
+                        {allSources.map(src => (
+                          <label key={src} className={checkRowClass}>
+                            <input type="checkbox" className={checkboxClass}
+                              checked={filterSources.has(src)}
+                              onChange={() => setFilterSources(prev => toggleSet(prev, src))} />
+                            {src}
+                          </label>
+                        ))}
+                      </div>
+                    </FilterTh>
+                  )}
+                  {visibleCols.includes('listed_date') && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Listing</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -440,31 +724,49 @@ export default function DealsPage() {
                   const askPsqm = deal.asking_price && deal.size_sqm ? deal.asking_price / deal.size_sqm : undefined
                   return (
                     <tr key={deal.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 max-w-xs truncate">
-                        {deal.url ? (
-                          <a href={deal.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                            {deal.address || deal.url}
-                          </a>
-                        ) : (deal.address || '—')}
-                      </td>
-                      <td className="px-4 py-2 text-gray-600">{deal.district || '—'}</td>
-                      <td className="px-4 py-2 text-gray-500">{deal.zone ?? '—'}</td>
-                      <td className="px-4 py-2 text-right">{fmt(deal.size_sqm)}</td>
-                      <td className="px-4 py-2 text-right">{deal.bedrooms ?? '—'}</td>
-                      <td className="px-4 py-2 text-right">{deal.bathrooms ?? '—'}</td>
-                      <td className="px-4 py-2 text-right">{deal.floor ?? '—'}</td>
-                      <td className="px-4 py-2 text-right font-medium">
-                        {deal.asking_price ? `€${fmt(deal.asking_price)}` : '—'}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-500">
-                        {askPsqm ? `€${fmt(askPsqm)}` : '—'}
-                      </td>
-                      <td className="px-4 py-2">
-                        <ConditionBadge condition={deal.condition} />
-                      </td>
-                      <td className="px-4 py-2">
-                        <AmenityBadges deal={deal} />
-                      </td>
+                      {visibleCols.includes('address') && (
+                        <td className="px-4 py-2 max-w-xs truncate">
+                          {deal.url ? (
+                            <a href={deal.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                              {deal.address || deal.url}
+                            </a>
+                          ) : (deal.address || '—')}
+                        </td>
+                      )}
+                      {visibleCols.includes('district') && <td className="px-4 py-2 text-gray-600">{deal.district || '—'}</td>}
+                      {visibleCols.includes('zone') && <td className="px-4 py-2 text-gray-500">{deal.zone ?? '—'}</td>}
+                      {visibleCols.includes('size_sqm') && <td className="px-4 py-2 text-right">{fmt(deal.size_sqm)}</td>}
+                      {visibleCols.includes('bedrooms') && <td className="px-4 py-2 text-right">{deal.bedrooms ?? '—'}</td>}
+                      {visibleCols.includes('bathrooms') && <td className="px-4 py-2 text-right">{deal.bathrooms ?? '—'}</td>}
+                      {visibleCols.includes('floor') && <td className="px-4 py-2 text-right">{deal.floor ?? '—'}</td>}
+                      {visibleCols.includes('asking_price') && (
+                        <td className="px-4 py-2 text-right font-medium">
+                          {deal.asking_price ? `€${fmt(deal.asking_price)}` : '—'}
+                        </td>
+                      )}
+                      {visibleCols.includes('price_per_sqm') && (
+                        <td className="px-4 py-2 text-right text-gray-500">
+                          {askPsqm ? `€${fmt(askPsqm)}` : '—'}
+                        </td>
+                      )}
+                      {visibleCols.includes('condition') && (
+                        <td className="px-4 py-2">
+                          <ConditionBadge condition={deal.condition} />
+                        </td>
+                      )}
+                      {visibleCols.includes('amenities') && (
+                        <td className="px-4 py-2">
+                          <AmenityBadges deal={deal} />
+                        </td>
+                      )}
+                      {visibleCols.includes('source') && (
+                        <td className="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{getSource(deal.url)}</td>
+                      )}
+                      {visibleCols.includes('listed_date') && (
+                        <td className="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">
+                          {deal.listed_date ? new Date(deal.listed_date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                        </td>
+                      )}
                     </tr>
                   )
                 })}

@@ -65,17 +65,17 @@ Idealista API / Idealista HTML (Firecrawl) / Redpiso JSON API / Fotocasa (Firecr
 - `FinancialAnalysis` — all FlipInput fields + computed outputs (irr, moic, return_on_equity, gross_margin, profit, gross_exit_price, net_exit_price, total_dev_cost, max_equity_exposure, closing_costs, broker_fee, mortgage_debt, total_debt)
 
 **API layer** (`api/`):
-- `deals.py` — `GET /deals`, `POST /deals/from-message`, `POST /deals/scrape` (portal param: "idealista" | "redpiso" | "fotocasa" | "pisos" | "idealista_html"), `POST /deals/predict` (batch)
-- `analyses.py` — `POST /analyses` (run + save), `GET /analyses` (history list)
+- `deals.py` — `GET /deals`, `POST /deals/from-message`, `POST /deals/scrape` (portal param: "idealista" | "redpiso" | "fotocasa" | "pisos" | "idealista_html"), `POST /deals/predict` (batch), `DELETE /deals/predictions/{id}` (delete single prediction)
+- `analyses.py` — `GET /analyses` (history list), `POST /analyses` (run + save), `PUT /analyses/{id}` (re-run with new inputs, overwrites in-place), `DELETE /analyses/{id}` (delete)
 - `messages.py` — message CRUD
-- `schemas.py` — all Pydantic models. Note: boolean amenity fields (`storage_room`, `terrace`, etc.) are `Optional[bool] = False` to handle `None` from DB
+- `schemas.py` — all Pydantic models. Note: boolean amenity fields (`storage_room`, `terrace`, etc.) are `Optional[bool] = False` to handle `None` from DB. `FlipResult` now exposes all 7 echoed input fields needed for edit pre-fill: `capex_months`, `monthly_opex`, `ibi_annual`, `closing_costs_pct`, `broker_fee_pct`, `tax_rate`, `capex_debt_rate_annual`.
 
 **Scraping** (`services/portal_scraper.py`):
 - `scrape_idealista_api()` — OAuth2 → form-encoded POST to search (see Idealista quirks below). 50 results/page, 100 req/month quota.
 - `scrape_idealista_html()` — Firecrawl bypasses DataDome bot protection. 30 listings/page, ~15,374 available. No API quota cost. Parses markdown: title link `[Piso en X, Barrio, Madrid](url)`, price, features, amenities.
 - `scrape_redpiso_html()` — Redpiso JSON API (`/api/properties`), no auth, 50/page, 1,284+ Madrid listings available. Includes `broker_name` and `broker_contact` (phone).
 - `scrape_fotocasa_firecrawl()` — Firecrawl + `location={'country': 'ES'}` to bypass geo-block. ~31 listings/page, 9,439 available. Parses markdown via regex: title, price, features, amenities.
-- `scrape_pisos_firecrawl()` — Firecrawl, 30 listings/page, ~10,500 available. Extracts district + zone from "Barrio (Distrito X. Madrid Capital)" pattern.
+- `scrape_pisos_firecrawl()` — Firecrawl, 30 listings/page, ~10,500 available. Extracts district + zone from "Barrio (Distrito X. Madrid Capital)" pattern. Condition extracted via keyword matching on title + context text ("a reformar" → `renew`, "obra nueva" → `newdevelopment`, "buen estado" → `good`).
 - `normalize_district()` — Maps scraped district/barrio names to one of Madrid's 21 canonical districts. Uses `_DISTRICT_ALIASES` dict with ~150 barrio→district mappings. Returns `None` for non-Madrid municipalities (which are then filtered out by `ingest_listings()`).
 - `ingest_listings(db, listings)` — PostgreSQL upsert via `ON CONFLICT DO UPDATE`. Filters: requires `url`, `asking_price`, `size_sqm`, and a canonical Madrid district. COALESCE for data-quality fields, OVERWRITE for mutable fields. Deduplicates by `url` unique constraint. Reruns are fully safe.
 - User-agent rotation: `USER_AGENTS` list + `_html_headers()` helper adds random UA + Referer to all requests.
@@ -134,15 +134,16 @@ Next.js 14 App Router + Tailwind CSS. Proxy: `/api/*` → `http://localhost:8000
 
 **Pages**:
 - `/` (home) — dashboard with date header, natural-language search stub ("Busca propiedades… próximamente"), quick stats bar (total listings, districts, avg €/m²), recent 5 deals table with clickable URLs, "New listings" scrape button, and 4 quick-nav cards (Deals / Valuaciones / Análisis / Analytics).
-- `/deals` — listings table with column-header inline filter dropdowns, "New listings" button (scrapes all 5 portals sequentially), "Tasación (N)" button → ML predicted price shown inline per row. Pagination: 25/50/100/All per page.
-- `/valuaciones` — ML valuation page. Select deals, run batch prediction, view predicted vs asking price.
-- `/analyses` — history table of all past Fix & Flip analyses + "Nuevo Análisis" modal form with linked price pair inputs (total ↔ €/m² auto-calculate).
+- `/deals` — listings table with column-header inline filter dropdowns for every column (including null-include "Sin datos" options on categorical filters), "New listings" button (scrapes all 5 portals sequentially), "Tasación (N)" button → ML predicted price shown inline per row. Pagination: 25/50/100/All per page. Column picker "Columnas ⚙" persists selection to `localStorage`. New columns: **Fuente** (derived from URL — Idealista/Redpiso/Fotocasa/Pisos.com/Manual) and **F. Listing** (`listed_date`). Default hides Amenidades. Filters: Distrito, Zona (none), m², Hab. (+ sin datos), Baños (+ sin datos), Planta (checkbox list), Precio, €/m² (sort only), Estado (+ sin estado), Amenidades (Ascensor/Terraza/Garaje toggles), Fuente (checkbox). All filters have null-include "Sin datos" checkbox where applicable.
+- `/valuaciones` — ML valuation page. Select deals, run batch prediction, view predicted vs asking price. Each prediction row has a 🗑 delete button with inline confirm.
+- `/analyses` — history table of all past Fix & Flip analyses + "Nuevo Análisis" modal form with linked price pair inputs (total ↔ €/m² auto-calculate). Each row has ✎ edit (re-opens modal pre-filled, converts pct fields ×100 for display) and 🗑 delete with inline confirm. Edit calls `PUT /analyses/{id}` which re-runs the analysis and overwrites the record in-place (ID + `created_at` preserved).
 - `/analytics` — market analytics dashboard (see Analytics section below).
 
 **Key files**:
 - `lib/api.ts` — typed fetch helpers (no trailing slashes on URLs). `scrapeDeals(portal, pageFrom?)` accepts `'idealista' | 'redpiso' | 'fotocasa' | 'pisos' | 'idealista_html'`. `getAnalyticsStats(maxPriceSqm?, minPriceSqm?)` passes outlier bounds as query params.
 - `app/page.tsx` — home dashboard. Loads all deals client-side for quick stats; reuses `getDeals()` + `scrapeDeals()` from `lib/api`.
-- `app/deals/page.tsx` — deals table. Filters are column-header dropdowns (not a panel). Sort arrows use ▲▼ (not ↑↓ which render as emoji). Pagination state: `page`, `pageSize`. Scraping flow: Idealista API → Redpiso → Fotocasa → Pisos.com → Idealista HTML.
+- `app/deals/page.tsx` — deals table. Filters are column-header dropdowns (not a panel). Sort arrows use ▲▼ (not ↑↓ which render as emoji). Pagination state: `page`, `pageSize`. Scraping flow: Idealista API → Redpiso → Fotocasa → Pisos.com → Idealista HTML. Column visibility controlled by `visibleCols` state (persisted to `localStorage` key `deals_visible_cols`). `getSource(url)` helper derives portal name from URL.
+- `app/api/deals/scrape/route.ts` — Next.js Route Handler that proxies `POST /api/deals/scrape` to FastAPI with `maxDuration = 300` and a 4.5-minute AbortSignal timeout.
 - `app/analytics/page.tsx` — analytics dashboard using Recharts. See Analytics section below.
 - `app/analyses/page.tsx` — analysis history + new analysis form.
 - `components/Sidebar.tsx` — nav with active state.
@@ -154,14 +155,14 @@ Next.js 14 App Router + Tailwind CSS. Proxy: `/api/*` → `http://localhost:8000
 4. Pisos.com via Firecrawl (3 chunks × 3 pages = 9 pages)
 5. Idealista HTML via Firecrawl (3 chunks × 3 pages = 9 pages)
 
-Each Firecrawl portal uses try/catch with break-on-failure to avoid blocking the flow. Known issue: Next.js proxy 30s timeout can cause "socket hang up" errors on slow Firecrawl pages, but data still saves correctly.
+Each Firecrawl portal uses try/catch with break-on-failure to avoid blocking the flow. **Socket hang up fixed**: `app/api/deals/scrape/route.ts` is a Next.js Route Handler that intercepts `/api/deals/scrape` before the proxy rewrite, setting `maxDuration = 300` and `AbortSignal.timeout(270_000)` on the upstream fetch. This eliminates the 30s proxy timeout.
 
 **Analytics dashboard** (`app/analytics/page.tsx`):
 Built with Recharts (BarChart, PieChart). Outlier filter presets in the header control `maxPsqm` / `minPsqm` state, which trigger a `useEffect` re-fetch on change. Charts shown:
 1. **Precio €/m² por Distrito** — horizontal bar, sorted desc, with city-average ReferenceLine.
 2. **Upside de Reforma por Distrito** — gap between avg price of "good" vs "renew" listings per district (investment signal).
 3. **Distribución por Estado** — stacked horizontal bar by district + overall pie chart (A reformar / Buen estado / Nueva).
-4. **Spread ML vs Precio Pedido** — table of districts with avg `(ml_predicted - asking) / asking`. Green > +5%, yellow 0–5%, red < 0%.
+4. **Spread ML vs Precio Pedido** — table of districts with avg `(ml_predicted - asking) / asking`. Green > +5%, yellow 0–5%, red < 0%. **Note**: only covers deals for which ML predictions have been manually run via `/valuaciones` — it is NOT market-wide. The "Deals valorados" count is the ML-prediction sample size per district, which is small and self-selected. Will become meaningful once auto-prediction on scrape is implemented.
 5. **Cartera analizada** — KPI strip (avg IRR, MOIC, ROE) from `financial_analyses` table. Shown only if any analyses exist.
 6. *(Expandable via "Mostrar más")* Price histogram, size histogram, bedrooms distribution, amenity prevalence bars (elevator/terrace/balcony/garage/storage).
 
@@ -194,10 +195,13 @@ KPI strip: Dataset count (with active filter label), avg city €/m², highest r
 | Fix & Flip financial model | ✅ Working — LTV/mortgage/capex debt supported |
 | `financial_analyses` table + API | ✅ Working — migration `29ddff7d5d80` applied |
 | Frontend — home dashboard `/` | ✅ Working — quick stats, recent deals, scrape button, nav cards |
-| Frontend — `/deals` page | ✅ Working — scrapes all 5 portals, filters, pagination |
-| Frontend — `/valuaciones` page | ✅ Working — batch ML predictions |
-| Frontend — `/analyses` page | ✅ Working — history table + new analysis form functional |
+| Frontend — `/deals` page | ✅ Working — full column filters (all columns), column visibility picker, Fuente + Fecha Listing columns |
+| Frontend — `/valuaciones` page | ✅ Working — batch ML predictions + per-row delete |
+| Frontend — `/analyses` page | ✅ Working — history table + new analysis form + per-row edit/delete |
 | Frontend — `/analytics` page | ✅ Working — Recharts dashboards, outlier filter presets, portfolio KPIs |
+| Pisos.com condition extraction | ✅ Added — keyword matching on listing text |
+| Socket hang up fix | ✅ Fixed — Route Handler with maxDuration=300 at `app/api/deals/scrape/route.ts` |
+| Edit/delete analyses + predictions | ✅ Working — PUT/DELETE endpoints + frontend inline confirm UI |
 | Backfill feature | ❌ Removed — endpoint, functions, and UI deleted |
 | Dataset size | ~2,464 clean Madrid deals (as of 2026-03-13) |
 
@@ -207,7 +211,7 @@ KPI strip: Dataset count (with active filter label), avg city €/m², highest r
 - Current dataset: ~2,464 deals. Available inventory: Idealista HTML ~15k, Fotocasa ~9k, Pisos.com ~10k
 - Can increase page counts per scrape or run multiple scrape cycles
 - Improve forward scrapers to capture more fields (floor, zone, amenities) upfront — avoids need for per-listing detail requests
-- Known issue: Firecrawl socket timeout on slow pages — consider increasing chunk size or adding retry logic
+- Redpiso condition: API has no condition field — only option is per-listing detail requests (against current strategy)
 
 ### Priority 2 — Prompt-based scraping
 - UI stub already present on home page (`/`): disabled search box "Busca propiedades… próximamente"

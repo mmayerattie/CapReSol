@@ -1,5 +1,6 @@
+import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -181,3 +182,15 @@ def predict_deals(payload: PredictRequest, db: Session = Depends(get_db)):
         results.append(prediction)
 
     return results
+
+
+@router.delete("/predictions/{prediction_id}", status_code=204)
+def delete_prediction(prediction_id: uuid.UUID, db: Session = Depends(get_db)):
+    obj = db.query(models.Prediction).filter(
+        models.Prediction.id == prediction_id
+    ).first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+    db.delete(obj)
+    db.commit()
+    return Response(status_code=204)

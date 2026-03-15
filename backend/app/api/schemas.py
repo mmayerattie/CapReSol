@@ -111,6 +111,13 @@ class FlipResult(BaseModel):
     mortgage_ltv: float
     mortgage_rate_annual: float
     capex_debt: float
+    capex_months: int
+    monthly_opex: float
+    ibi_annual: float
+    closing_costs_pct: float
+    broker_fee_pct: float
+    tax_rate: float
+    capex_debt_rate_annual: float
     # Outputs
     irr: Optional[float] = None
     moic: float

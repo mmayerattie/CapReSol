@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { getAnalyses, createAnalysis, Analysis, FlipInput } from '../../lib/api'
+import { getAnalyses, createAnalysis, updateAnalysis, deleteAnalysis, Analysis, FlipInput } from '../../lib/api'
 
 function fmt(n?: number | null, decimals = 0) {
   if (n == null) return '—'
@@ -108,6 +108,8 @@ export default function AnalysesPage() {
   const [exitTotal, setExitTotal] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
     getAnalyses().then(setAnalyses).catch(() => setError('No se pudo conectar al backend.'))
@@ -145,7 +147,44 @@ export default function AnalysesPage() {
   }
 
   function resetForm() {
-    setForm(EMPTY); setPurchasePsqm(0); setExitTotal(0); setError('')
+    setForm(EMPTY); setPurchasePsqm(0); setExitTotal(0); setError(''); setEditingId(null)
+  }
+
+  function openEditForm(a: Analysis) {
+    setForm({
+      name: a.name,
+      size_sqm: a.size_sqm,
+      purchase_price: a.purchase_price,
+      capex_total: a.capex_total,
+      capex_months: a.capex_months,
+      project_months: a.project_months,
+      exit_price_per_sqm: a.exit_price_per_sqm,
+      monthly_opex: a.monthly_opex,
+      ibi_annual: a.ibi_annual,
+      closing_costs_pct: a.closing_costs_pct * 100,
+      broker_fee_pct: a.broker_fee_pct * 100,
+      tax_rate: a.tax_rate * 100,
+      mortgage_ltv: a.mortgage_ltv * 100,
+      mortgage_rate_annual: a.mortgage_rate_annual * 100,
+      capex_debt: a.capex_debt,
+      capex_debt_rate_annual: a.capex_debt_rate_annual * 100,
+    })
+    setPurchasePsqm(a.size_sqm > 0 ? Math.round(a.purchase_price / a.size_sqm) : 0)
+    setExitTotal(Math.round(a.exit_price_per_sqm * a.size_sqm))
+    setEditingId(a.id)
+    setShowForm(true)
+    setError('')
+  }
+
+  async function handleDeleteAnalysis(id: string) {
+    try {
+      await deleteAnalysis(id)
+      setAnalyses(prev => prev.filter(a => a.id !== id))
+      setConfirmDeleteId(null)
+      if (expandedId === id) setExpandedId(null)
+    } catch (e: unknown) {
+      setError(`Error al eliminar: ${e instanceof Error ? e.message : 'Error desconocido'}`)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -162,8 +201,13 @@ export default function AnalysesPage() {
         mortgage_rate_annual: form.mortgage_rate_annual / 100,
         capex_debt_rate_annual: form.capex_debt_rate_annual / 100,
       }
-      const result = await createAnalysis(payload)
-      setAnalyses(prev => [result, ...prev])
+      if (editingId) {
+        const updated = await updateAnalysis(editingId, payload)
+        setAnalyses(prev => prev.map(a => a.id === editingId ? updated : a))
+      } else {
+        const result = await createAnalysis(payload)
+        setAnalyses(prev => [result, ...prev])
+      }
       setShowForm(false)
       resetForm()
     } catch (e: unknown) {
@@ -197,13 +241,14 @@ export default function AnalysesPage() {
               <th className="px-4 py-3 text-right">IRR</th>
               <th className="px-4 py-3 text-right">MOIC</th>
               <th className="px-4 py-3 text-right">ROE</th>
+              <th className="px-4 py-3 w-24"></th>
               <th className="px-4 py-3 w-8"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {analyses.length === 0 && (
               <tr>
-                <td colSpan={11} className="text-center py-10 text-gray-400">
+                <td colSpan={12} className="text-center py-10 text-gray-400">
                   No hay análisis guardados — pulsa &quot;+ Nuevo Análisis&quot;
                 </td>
               </tr>
@@ -223,11 +268,39 @@ export default function AnalysesPage() {
                   <td className="px-4 py-2 text-right font-semibold text-blue-700">{pct(a.irr)}</td>
                   <td className="px-4 py-2 text-right">{a.moic.toFixed(2)}x</td>
                   <td className="px-4 py-2 text-right">{pct(a.return_on_equity)}</td>
+                  <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
+                    {confirmDeleteId === a.id ? (
+                      <span className="flex items-center gap-1 text-xs">
+                        <button
+                          onClick={() => handleDeleteAnalysis(a.id)}
+                          className="text-red-600 font-medium hover:underline"
+                        >Eliminar</button>
+                        <span className="text-gray-300">/</span>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="text-gray-400 hover:text-gray-600"
+                        >Cancelar</button>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <button
+                          onClick={() => openEditForm(a)}
+                          title="Editar"
+                          className="text-gray-400 hover:text-blue-500 transition-colors text-base"
+                        >✎</button>
+                        <button
+                          onClick={() => setConfirmDeleteId(a.id)}
+                          title="Eliminar"
+                          className="text-gray-400 hover:text-red-500 transition-colors"
+                        >🗑</button>
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-gray-400 text-xs">{expandedId === a.id ? '▼' : '▶'}</td>
                 </tr>
                 {expandedId === a.id && (
                   <tr key={`detail-${a.id}`}>
-                    <td colSpan={11} className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                    <td colSpan={12} className="px-6 py-4 bg-gray-50 border-b border-gray-100">
                       <div className="grid grid-cols-4 gap-x-8 gap-y-3 text-sm">
                         {/* Col 1: Propiedad */}
                         <div>
@@ -282,7 +355,7 @@ export default function AnalysesPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Nuevo Análisis Fix &amp; Flip</h2>
+              <h2 className="text-xl font-bold">{editingId ? 'Editar Análisis Fix & Flip' : 'Nuevo Análisis Fix & Flip'}</h2>
               <button onClick={() => { setShowForm(false); resetForm() }} className="text-gray-400 hover:text-gray-700 text-xl">✕</button>
             </div>
 
@@ -363,7 +436,7 @@ export default function AnalysesPage() {
                 </button>
                 <button type="submit" disabled={submitting}
                   className="px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium disabled:opacity-50">
-                  {submitting ? 'Calculando…' : 'Ejecutar análisis'}
+                  {submitting ? 'Calculando…' : editingId ? 'Actualizar análisis' : 'Ejecutar análisis'}
                 </button>
               </div>
             </form>

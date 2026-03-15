@@ -1010,6 +1010,16 @@ def _parse_pisos_listings(markdown: str) -> list[dict]:
                 address = title_text[len(prefix):]
                 break
 
+        # Condition from title + context text
+        condition = None
+        text_lower = (title_text + ' ' + context_after).lower()
+        if any(k in text_lower for k in ['a reformar', 'para reformar', 'para restaurar', 'necesita reforma']):
+            condition = 'renew'
+        elif any(k in text_lower for k in ['obra nueva', 'nueva construcción', 'nueva construccion', 'de obra nueva']):
+            condition = 'newdevelopment'
+        elif any(k in text_lower for k in ['buen estado', 'bien conservado', 'muy buen estado', 'segunda mano']):
+            condition = 'good'
+
         listing = {
             "url": url,
             "address": address,
@@ -1029,7 +1039,7 @@ def _parse_pisos_listings(markdown: str) -> list[dict]:
             "terrace": False,
             "balcony": False,
             "storage_room": False,
-            "condition": None,
+            "condition": condition,
             "orientation": None,
             "listed_date": date.today(),
             "broker_name": None,

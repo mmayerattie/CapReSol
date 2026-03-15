@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import { getPredictions, getDeals, predictDeals, PredictionWithDeal, Deal } from '../../lib/api'
+import { getPredictions, getDeals, predictDeals, deletePrediction, PredictionWithDeal, Deal } from '../../lib/api'
 
 function fmt(n?: number | null, decimals = 0) {
   if (n == null) return '—'
@@ -224,6 +224,8 @@ export default function ValuacionesPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState('')
 
   function load() {
     setLoading(true)
@@ -231,6 +233,17 @@ export default function ValuacionesPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  async function handleDeletePrediction(id: string) {
+    try {
+      await deletePrediction(id)
+      setPredictions(prev => prev.filter(p => p.id !== id))
+      setConfirmDeleteId(null)
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e.message : 'Error al eliminar')
+      setTimeout(() => setDeleteError(''), 4000)
+    }
+  }
 
   function handleModalDone(count: number) {
     setShowModal(false)
@@ -263,6 +276,7 @@ export default function ValuacionesPage() {
           </button>
         </div>
       </div>
+      {deleteError && <p className="text-red-500 text-sm mt-2 mb-4">{deleteError}</p>}
 
       {loading ? (
         <p className="text-gray-400">Cargando…</p>
@@ -286,6 +300,7 @@ export default function ValuacionesPage() {
                 <th className="px-4 py-3 text-left">Spread</th>
                 <th className="px-4 py-3 text-left">Estado</th>
                 <th className="px-4 py-3 text-left">Fecha</th>
+                <th className="px-4 py-3"></th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -319,6 +334,27 @@ export default function ValuacionesPage() {
                         className="text-xs text-gray-400 hover:text-blue-600 hover:underline whitespace-nowrap">
                         Analizar →
                       </Link>
+                    </td>
+                    <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
+                      {confirmDeleteId === p.id ? (
+                        <span className="flex items-center gap-1 text-xs">
+                          <button
+                            onClick={() => handleDeletePrediction(p.id)}
+                            className="text-red-600 font-medium hover:underline"
+                          >Eliminar</button>
+                          <span className="text-gray-300">/</span>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-gray-400 hover:text-gray-600"
+                          >Cancelar</button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(p.id)}
+                          title="Eliminar tasación"
+                          className="text-gray-300 hover:text-red-500 transition-colors"
+                        >🗑</button>
+                      )}
                     </td>
                   </tr>
                 )

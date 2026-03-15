@@ -13,6 +13,14 @@ export interface Deal {
   floor?: number
   asking_price?: number
   condition?: string
+  orientation?: string
+  storage_room?: boolean
+  terrace?: boolean
+  balcony?: boolean
+  elevator?: boolean
+  garage?: boolean
+  broker_name?: string
+  broker_contact?: string
   listed_date?: string
   url?: string
   created_at: string
@@ -33,8 +41,15 @@ export interface Analysis {
   size_sqm: number
   purchase_price: number
   capex_total: number
+  capex_months: number
   project_months: number
   exit_price_per_sqm: number
+  monthly_opex: number
+  ibi_annual: number
+  closing_costs_pct: number    // stored as decimal 0–1
+  broker_fee_pct: number       // stored as decimal 0–1
+  tax_rate: number             // stored as decimal 0–1
+  capex_debt_rate_annual: number // stored as decimal 0–1
   mortgage_ltv: number
   mortgage_rate_annual: number
   capex_debt: number
@@ -129,6 +144,35 @@ export async function createAnalysis(data: FlipInput): Promise<Analysis> {
     throw new Error(body?.detail ?? `HTTP ${res.status}`)
   }
   return res.json()
+}
+
+export async function deleteAnalysis(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/analyses/${id}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as any)?.detail ?? `HTTP ${res.status}`)
+  }
+}
+
+export async function updateAnalysis(id: string, data: FlipInput): Promise<Analysis> {
+  const res = await fetch(`${BASE}/analyses/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as any)?.detail ?? `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function deletePrediction(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/deals/predictions/${id}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as any)?.detail ?? `HTTP ${res.status}`)
+  }
 }
 
 export interface DistrictStats {
