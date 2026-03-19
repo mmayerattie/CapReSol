@@ -1,6 +1,9 @@
 import { getToken, clearToken } from './auth'
 
-const BASE = '/api'
+// In production (Vercel), call Railway directly — Next.js rewrites to external
+// URLs behave as client-visible redirects, not server-side proxies, which
+// triggers Mixed Content blocks. CORS on the backend allows the Vercel origin.
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api'
 
 function authHeaders(): HeadersInit {
   const token = getToken()
