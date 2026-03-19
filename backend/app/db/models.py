@@ -76,6 +76,27 @@ class Deal(Base):
     message = relationship("Message", back_populates="deal")
     prediction = relationship("Prediction", back_populates="deal", uselist=False)
 
+
+class NotaryStat(Base):
+    """Real transaction closing prices from the Spanish Notary Statistical Portal."""
+    __tablename__ = "notary_stats"
+    __table_args__ = (
+        # Composite unique: one row per postal_code × construction_type × property_class
+        {"sqlite_autoincrement": True},
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    postal_code = Column(String(5), nullable=False, index=True)
+    construction_type = Column(String(20), nullable=False, default="todos")  # todos | nueva | segunda_mano
+    property_class = Column(String(20), nullable=False, default="todos")     # todos | pisos | casas
+    notary_price_sqm = Column(Integer)          # avg €/m² at closing
+    notary_avg_price = Column(Integer)           # avg total transaction price
+    notary_avg_surface = Column(Integer)         # avg surface m²
+    notary_transactions = Column(Integer)        # transactions with price info
+    notary_total = Column(Integer)               # total transactions
+    scraped_at = Column(DateTime, server_default=func.now())
+
+
 class Prediction(Base):
     __tablename__ = "predictions"
 

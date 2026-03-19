@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from typing import Dict, Any
 import joblib
+import numpy as np
 import pandas as pd
 
 ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
@@ -50,8 +51,9 @@ def predict_price_from_features(features: Dict[str, Any]) -> float:
     scaler = load_scaler()
     X_scaled = scaler.transform(df)
 
-    # 5) Predict
+    # 5) Predict (model outputs log1p-transformed prices)
     model = load_model()
-    y_pred = model.predict(X_scaled)
+    y_pred_log = model.predict(X_scaled)
 
-    return float(y_pred[0])
+    # 6) Reverse log-transform to get price in euros
+    return float(np.expm1(y_pred_log[0]))

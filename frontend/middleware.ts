@@ -4,8 +4,9 @@ import type { NextRequest } from 'next/server'
 export function middleware(request: NextRequest) {
   const token = request.cookies.get('capresol_token')
   const isLoginPage = request.nextUrl.pathname.startsWith('/login')
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api')
 
-  if (!token && !isLoginPage) {
+  if (!token && !isLoginPage && !isApiRoute) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
   return NextResponse.next()

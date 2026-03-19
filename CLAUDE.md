@@ -4,15 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Goal
 
-CapReSol is a real estate investment analysis system for Madrid-focused funds. Four core capabilities:
+CapReSol is a real estate investment analysis system for Madrid-focused funds. Five core capabilities:
 1. **Portal scraping** — automated ingestion from 5 sources (Idealista API, Idealista HTML, Redpiso, Fotocasa, Pisos.com) into PostgreSQL
 2. **ML valuation** — Gradient Boosting model predicts market price from property features
 3. **Fix & Flip analysis** — user inputs investment parameters, system returns IRR, ROE, Equity Multiple, Gross Margin
 4. **Frontend** — Next.js UI to search deals, view ML predictions, and run financial analyses
+5. **Multi-user auth** — JWT-based authentication with 6 user accounts
+
+## Important: Git Policy
+
+**Do NOT create git commits or push to the repository.** Only edit/write files. The user will commit and push manually.
 
 ## Commands
 
-### Infrastructure
+### Infrastructure (local development)
 ```bash
 cd infra && docker compose up -d    # Start Postgres 16 (required before backend)
 cd infra && docker compose down     # Stop Postgres
@@ -37,6 +42,47 @@ alembic downgrade -1                               # Roll back one step
 cd frontend && npm run dev    # http://localhost:3000
 ```
 
+## Production Deployment
+
+### Architecture
+- **Backend**: Railway (Docker) → `https://capresol-production.up.railway.app`
+- **Frontend**: Vercel → `https://cap-re-sol.vercel.app`
+- **Database**: Railway Postgres (internal: `postgres.railway.internal`, public URL available for external access)
+
+### Backend (Railway)
+- Dockerfile at `backend/Dockerfile`: Python 3.11-slim, installs deps, runs alembic migrations + seeds users + starts uvicorn
+- `--proxy-headers --forwarded-allow-ips='*'` on uvicorn — required because Railway terminates SSL at the load balancer; without these flags, FastAPI's trailing-slash redirects generate `http://` URLs causing Mixed Content blocks
+- `PYTHONPATH=/app` set in Dockerfile for alembic module resolution
+- `config.py` auto-converts Railway's `postgresql://` to `postgresql+psycopg2://` for SQLAlchemy
+- Users are seeded automatically on every deploy from `USERS_CONFIG` env var (idempotent)
+
+### Frontend (Vercel)
+- Root directory: `frontend`
+- `NEXT_PUBLIC_API_URL` env var must be set to the Railway HTTPS URL (all environments)
+- `lib/api.ts` calls Railway directly (not via Next.js rewrites) — Vercel rewrites to external URLs behave as client-visible redirects causing Mixed Content. CORS on the backend allows the Vercel origin.
+- `lib/auth.ts` also calls Railway directly for login
+- HTTP→HTTPS forced in code as safety net (`replace(/^http:\/\//, 'https://')`)
+- `app/api/auth/login/route.ts` — Route Handler for login proxy (fallback for local dev)
+- `app/api/deals/scrape/route.ts` — Route Handler with `maxDuration=300` for scrape proxy (local dev)
+
+### Railway Environment Variables
+```
+DATABASE_URL          — auto-injected by Railway Postgres
+IDEALISTA_API_KEY     — Idealista OAuth2 client ID
+IDEALISTA_SECRET      — Idealista OAuth2 client secret
+FIRECRAWL_API_KEY     — Firecrawl API key
+JWT_SECRET            — random 32-char string for JWT signing
+USERS_CONFIG          — JSON array: [{"username":"...","password":"..."},...]
+ALLOWED_ORIGINS       — JSON array: ["http://localhost:3000","https://cap-re-sol.vercel.app"]
+```
+
+### Key deployment files
+- `backend/Dockerfile` — build + startup (alembic → seed_users → uvicorn)
+- `backend/.dockerignore` — excludes .env, __pycache__, .git, *.md
+- `backend/scripts/seed_users.py` — reads USERS_CONFIG, creates users (skips existing)
+- `frontend/vercel.json` — Vercel framework config
+- `frontend/next.config.js` — rewrites (used locally), backend URL from env
+
 ## Architecture
 
 ### Data Flow
@@ -44,6 +90,8 @@ cd frontend && npm run dev    # http://localhost:3000
 Idealista API / Idealista HTML (Firecrawl) / Redpiso JSON API / Fotocasa (Firecrawl) / Pisos.com (Firecrawl)
         ↓
   normalize_district() → 21 canonical Madrid districts
+        ↓
+  extract_postal_code() → regex on address + ZONE_TO_POSTAL fallback
         ↓
   ingest_listings() → filter (require price + size + Madrid district) → upsert
         ↓
@@ -56,30 +104,40 @@ Idealista API / Idealista HTML (Firecrawl) / Redpiso JSON API / Fotocasa (Firecr
 
 ### Backend (`backend/app/`)
 
-**Entry point**: `main.py` — FastAPI app with CORS middleware (allows `localhost:3000`), mounts `/messages`, `/deals`, `/analyses` routers.
+**Entry point**: `main.py` — FastAPI app with CORS middleware (`allow_origins` from `ALLOWED_ORIGINS` env var, `allow_credentials=True`), mounts `/auth`, `/messages`, `/deals`, `/analyses`, `/analytics` routers.
+
+**Authentication** (`api/auth.py`):
+- `POST /auth/login` — accepts `{username, password}`, returns `{access_token, token_type}`
+- `get_current_user` dependency — validates Bearer JWT, returns `User` ORM object
+- All routers except `/auth/login` and `GET /` are protected with `Depends(get_current_user)`
+- Passwords hashed with `bcrypt` directly (not passlib — incompatible with bcrypt 4.x)
+- JWT tokens expire after 7 days (`JWT_EXPIRE_MINUTES = 60 * 24 * 7`)
 
 **Database models** (`db/models.py`):
+- `User` — id, username, hashed_password, created_at
 - `Message` — raw inbound data; `channel` field: `portal | gmail | whatsapp`
-- `Deal` — structured property record. Full field list: address, city, country, property_type, size_sqm, bedrooms, bathrooms, floor, asking_price, currency, url (unique), broker_name, broker_contact, district, zone, condition, orientation, storage_room, terrace, balcony, elevator, garage, listed_date
+- `Deal` — structured property record. Full field list: address, city, country, property_type, size_sqm, bedrooms, bathrooms, floor, asking_price, currency, url (unique), broker_name, broker_contact, district, zone, condition, orientation, storage_room, terrace, balcony, elevator, garage, listed_date, postal_code
 - `Prediction` — ML output: predicted_price, model_version, FK to deal
-- `FinancialAnalysis` — all FlipInput fields + computed outputs (irr, moic, return_on_equity, gross_margin, profit, gross_exit_price, net_exit_price, total_dev_cost, max_equity_exposure, closing_costs, broker_fee, mortgage_debt, total_debt)
+- `FinancialAnalysis` — all FlipInput fields + computed outputs
 
 **API layer** (`api/`):
-- `deals.py` — `GET /deals`, `POST /deals/from-message`, `POST /deals/scrape` (portal param: "idealista" | "redpiso" | "fotocasa" | "pisos" | "idealista_html"), `POST /deals/predict` (batch), `DELETE /deals/predictions/{id}` (delete single prediction)
-- `analyses.py` — `GET /analyses` (history list), `POST /analyses` (run + save), `PUT /analyses/{id}` (re-run with new inputs, overwrites in-place), `DELETE /analyses/{id}` (delete)
+- `auth.py` — `POST /auth/login`, `get_current_user` dependency
+- `deals.py` — `GET /deals`, `POST /deals/from-message`, `POST /deals/scrape`, `POST /deals/predict` (batch), `DELETE /deals/predictions/{id}`
+- `analyses.py` — `GET /analyses`, `POST /analyses`, `PUT /analyses/{id}`, `DELETE /analyses/{id}`
+- `analytics.py` — `GET /analytics?max_price_sqm=&min_price_sqm=`
 - `messages.py` — message CRUD
-- `schemas.py` — all Pydantic models. Note: boolean amenity fields (`storage_room`, `terrace`, etc.) are `Optional[bool] = False` to handle `None` from DB. `FlipResult` now exposes all 7 echoed input fields needed for edit pre-fill: `capex_months`, `monthly_opex`, `ibi_annual`, `closing_costs_pct`, `broker_fee_pct`, `tax_rate`, `capex_debt_rate_annual`.
+- `schemas.py` — all Pydantic models
 
 **Scraping** (`services/portal_scraper.py`):
-- `scrape_idealista_api()` — OAuth2 → form-encoded POST to search (see Idealista quirks below). 50 results/page, 100 req/month quota.
-- `scrape_idealista_html()` — Firecrawl bypasses DataDome bot protection. 30 listings/page, ~15,374 available. No API quota cost. Parses markdown: title link `[Piso en X, Barrio, Madrid](url)`, price, features, amenities.
-- `scrape_redpiso_html()` — Redpiso JSON API (`/api/properties`), no auth, 50/page, 1,284+ Madrid listings available. Includes `broker_name` and `broker_contact` (phone).
-- `scrape_fotocasa_firecrawl()` — Firecrawl + `location={'country': 'ES'}` to bypass geo-block. ~31 listings/page, 9,439 available. Parses markdown via regex: title, price, features, amenities.
-- `scrape_pisos_firecrawl()` — Firecrawl, 30 listings/page, ~10,500 available. Extracts district + zone from "Barrio (Distrito X. Madrid Capital)" pattern. Condition extracted via keyword matching on title + context text ("a reformar" → `renew`, "obra nueva" → `newdevelopment`, "buen estado" → `good`).
-- `normalize_district()` — Maps scraped district/barrio names to one of Madrid's 21 canonical districts. Uses `_DISTRICT_ALIASES` dict with ~150 barrio→district mappings. Returns `None` for non-Madrid municipalities (which are then filtered out by `ingest_listings()`).
-- `ingest_listings(db, listings)` — PostgreSQL upsert via `ON CONFLICT DO UPDATE`. Filters: requires `url`, `asking_price`, `size_sqm`, and a canonical Madrid district. COALESCE for data-quality fields, OVERWRITE for mutable fields. Deduplicates by `url` unique constraint. Reruns are fully safe.
-- User-agent rotation: `USER_AGENTS` list + `_html_headers()` helper adds random UA + Referer to all requests.
-- **Backfill removed** — `backfill_deal_details()`, `_extract_fields_from_idealista_detail()`, and `_extract_fields_from_fotocasa_detail()` were deleted (~230 lines). Strategy going forward: improve forward scrapers to capture all fields (amenities, condition, floor, zone) upfront at search-page level rather than revisiting individual detail pages. The `POST /deals/backfill-details` endpoint and the "Completar datos" UI button were also removed.
+- `scrape_idealista_api()` — OAuth2 → form-encoded POST. 50 results/page, 100 req/month quota.
+- `scrape_idealista_html()` — Firecrawl bypasses DataDome. 30 listings/page, ~15,374 available. No API quota cost.
+- `scrape_redpiso_html()` — Redpiso JSON API, no auth, 50/page, 1,284+ listings.
+- `scrape_fotocasa_firecrawl()` — Firecrawl + geo-proxy. ~31 listings/page, 9,439 available.
+- `scrape_pisos_firecrawl()` — Firecrawl, 30 listings/page, ~10,500 available. Orientation + amenity keyword extraction.
+- `normalize_district()` — Maps ~150 barrio names to 21 canonical Madrid districts.
+- `extract_postal_code(text, zone)` — Regex `r'\b(28\d{3})\b'` on address/title, falls back to `ZONE_TO_POSTAL[zone]` (131 barrios mapped).
+- `ZONE_TO_POSTAL` — dict mapping 131 Madrid barrios to their primary postal codes.
+- `ingest_listings(db, listings)` — PostgreSQL upsert via `ON CONFLICT DO UPDATE`. Auto-derives `postal_code`. COALESCE for data-quality fields, OVERWRITE for mutable fields.
 
 **Data quality rules** (enforced in `ingest_listings()`):
 - Listings without `asking_price` are dropped
@@ -88,15 +146,14 @@ Idealista API / Idealista HTML (Firecrawl) / Redpiso JSON API / Fotocasa (Firecr
 - District names are normalised before insert (barrio → district mapping)
 
 **ML pipeline** (`ml/`):
-- `features.py` — `deal_to_features(deal)`: Deal ORM → feature dict (Spanish-language keys). Categoricals: `Distrito`, `Zona`, `Estado`, `Ubicacion`. Excludes asking price to prevent leakage.
-- `model.py` — `predict_price_from_features(features)`: one-hot encodes categoricals, aligns to training columns, scales, runs GB model. Uses `@lru_cache` for artifact loading.
+- `features.py` — `deal_to_features(deal)`: Deal ORM → feature dict. Categoricals: `Distrito`, `Zona`, `Estado`, `Ubicacion`.
+- `model.py` — `predict_price_from_features(features)`: one-hot encodes, aligns to training columns, scales, runs GB model. Uses `@lru_cache` for artifacts.
 - `artifacts/` — `best_gb_model.pkl`, `scaler.pkl`, `model_columns.pkl`
-- `train.py` — **fully implemented**. Queries DB, filters 500–25,000 €/m² outliers, one-hot encodes categoricals, StandardScaler, GradientBoostingRegressor(n_estimators=300, max_depth=5, lr=0.05, subsample=0.8). Run with `python -m app.ml.train` from `backend/`. Last trained 2026-03-13: 2,461 deals, sklearn 1.7.2, R²=0.791, MAE≈€198k. **Restart backend after retraining** to clear `@lru_cache` on artifact loaders.
-- `scikit-learn` is unpinned in `requirements.txt` — version pin removed to avoid pickle incompatibility when upgrading.
+- `train.py` — Queries DB, filters outliers, one-hot encodes, StandardScaler, GradientBoostingRegressor(n_estimators=300, max_depth=5, lr=0.05, subsample=0.8). Run: `python -m app.ml.train` from `backend/`. Last trained 2026-03-13: 2,461 deals, R²=0.791, MAE≈€198k. **Restart backend after retraining** to clear `@lru_cache`.
 
-**Financial model** (`utils/excel.py`): `run_flip_analysis()` — pure-Python Fix & Flip with monthly equity cash flows and leverage. Inputs: size_sqm, purchase_price, capex_total, capex_months, project_months, exit_price_per_sqm, monthly_opex, ibi_annual, closing_costs_pct (0.075), broker_fee_pct (0.0363), mortgage_ltv, mortgage_rate_annual, capex_debt, capex_debt_rate_annual. Computes IRR via `numpy_financial.irr`. Analyses persisted to `financial_analyses` table. `name` field: auto-populated from deal address if `deal_id` provided, otherwise required as free text.
+**Financial model** (`utils/excel.py`): `run_flip_analysis()` — pure-Python Fix & Flip with monthly equity cash flows and leverage. Computes IRR via `numpy_financial.irr`.
 
-**Config** (`config.py`): reads `DATABASE_URL`, `IDEALISTA_API_KEY`, `IDEALISTA_SECRET`, `FIRECRAWL_API_KEY` from `backend/.env`.
+**Config** (`config.py`): reads `DATABASE_URL` (auto-converts `postgresql://` → `postgresql+psycopg2://`), `IDEALISTA_API_KEY`, `IDEALISTA_SECRET`, `FIRECRAWL_API_KEY`, `JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRE_MINUTES`, `ALLOWED_ORIGINS`, `USERS_CONFIG`.
 
 ### Idealista API — Critical Notes
 
@@ -114,134 +171,96 @@ Idealista API / Idealista HTML (Firecrawl) / Redpiso JSON API / Fotocasa (Firecr
 
 - **Endpoint**: `GET https://www.redpiso.es/api/properties` — no auth required
 - **Params**: `page`, `pageSize` (max 50), `type` ("sale"/"rent"), `statuses[]` (["ongoing","pending_signature"]), `sort` ("recent"), `province_slug` ("madrid"), `property_group_slug` ("viviendas")
-- **Response fields**: `slug` (for URL), `price`, `cadastre_property_summary.{bedrooms, bathrooms, usable_meters}`, `location.{district.name, quarter.name}`, `display_location` (address), `office.{name, phone}` (broker)
 - **URL pattern**: `https://www.redpiso.es/inmueble/{slug}`
-- **Total available**: ~1,283 Madrid sale listings (as of March 2026)
-- No quota limits observed. Add `time.sleep(1.1 + random(0, 0.5))` between pages as courtesy.
+- **Total available**: ~1,283 Madrid sale listings
+- No quota limits observed. Add `time.sleep(1.1 + random(0, 0.5))` between pages.
 
 ### District Normalisation
 
-Madrid has 21 official districts. The `normalize_district()` function in `portal_scraper.py` maps ~150 barrio names and spelling variants to canonical names: Centro, Arganzuela, Retiro, Salamanca, Chamartín, Tetuán, Chamberí, Fuencarral-El Pardo, Moncloa-Aravaca, Latina, Carabanchel, Usera, Puente de Vallecas, Moratalaz, Ciudad Lineal, Hortaleza, Villaverde, Villa de Vallecas, Vicálvaro, San Blas-Canillejas, Barajas.
+Madrid has 21 official districts. The `normalize_district()` function maps ~150 barrio names and spelling variants to canonical names: Centro, Arganzuela, Retiro, Salamanca, Chamartín, Tetuán, Chamberí, Fuencarral-El Pardo, Moncloa-Aravaca, Latina, Carabanchel, Usera, Puente de Vallecas, Moratalaz, Ciudad Lineal, Hortaleza, Villaverde, Villa de Vallecas, Vicálvaro, San Blas-Canillejas, Barajas.
 
-Listings from suburban municipalities (Getafe, Alcobendas, Rivas, etc.) are automatically dropped during ingestion.
+### Postal Code Mapping
+
+`ZONE_TO_POSTAL` dict maps 131 Madrid barrios to their primary postal codes (28xxx format). Used by `extract_postal_code()` as fallback when regex extraction from listing text fails.
 
 ### Infrastructure (`infra/`)
 - `docker-compose.yml` — Postgres 16, container `capresol-postgres`, port 5432, DB `capresol`
-- Backend runs locally (not containerized)
+- Local development only; production uses Railway Postgres
 
 ### Frontend (`frontend/`)
-Next.js 14 App Router + Tailwind CSS. Proxy: `/api/*` → `http://localhost:8000/*` (via `next.config.js` rewrites — no trailing slashes in fetch calls or CORS issues arise).
+Next.js 14 App Router + Tailwind CSS.
+
+**API architecture**: In production (Vercel), `lib/api.ts` calls Railway backend directly using `NEXT_PUBLIC_API_URL`. Locally, falls back to `/api` proxy via `next.config.js` rewrites to `localhost:8000`.
+
+**Authentication**:
+- `lib/auth.ts` — `login()`, `logout()`, `getToken()`, `setToken()`, `clearToken()`, `isAuthenticated()`. JWT stored in both localStorage (for API calls) and cookie `capresol_token` (for middleware).
+- `middleware.ts` — checks `capresol_token` cookie, redirects unauthenticated requests to `/login`
+- `app/login/page.tsx` — username + password form, calls Railway directly, full page reload on success
 
 **Pages**:
-- `/` (home) — dashboard with date header, natural-language search stub ("Busca propiedades… próximamente"), quick stats bar (total listings, districts, avg €/m²), recent 5 deals table with clickable URLs, "New listings" scrape button, and 4 quick-nav cards (Deals / Valuaciones / Análisis / Analytics).
-- `/deals` — listings table with column-header inline filter dropdowns for every column (including null-include "Sin datos" options on categorical filters), "New listings" button (scrapes all 5 portals sequentially), "Tasación (N)" button → ML predicted price shown inline per row. Pagination: 25/50/100/All per page. Column picker "Columnas ⚙" persists selection to `localStorage`. New columns: **Fuente** (derived from URL — Idealista/Redpiso/Fotocasa/Pisos.com/Manual) and **F. Listing** (`listed_date`). Default hides Amenidades. Filters: Distrito, Zona (none), m², Hab. (+ sin datos), Baños (+ sin datos), Planta (checkbox list), Precio, €/m² (sort only), Estado (+ sin estado), Amenidades (Ascensor/Terraza/Garaje toggles), Fuente (checkbox). All filters have null-include "Sin datos" checkbox where applicable.
-- `/valuaciones` — ML valuation page. Select deals, run batch prediction, view predicted vs asking price. Each prediction row has a 🗑 delete button with inline confirm.
-- `/analyses` — history table of all past Fix & Flip analyses + "Nuevo Análisis" modal form with linked price pair inputs (total ↔ €/m² auto-calculate). Each row has ✎ edit (re-opens modal pre-filled, converts pct fields ×100 for display) and 🗑 delete with inline confirm. Edit calls `PUT /analyses/{id}` which re-runs the analysis and overwrites the record in-place (ID + `created_at` preserved).
-- `/analytics` — market analytics dashboard (see Analytics section below).
+- `/` (home) — dashboard with quick stats, recent deals, scrape button, nav cards
+- `/deals` — listings table with column filters, pagination, ML predictions inline
+- `/valuaciones` — batch ML predictions + per-row delete
+- `/analyses` — Fix & Flip history + new analysis modal + edit/delete
+- `/analytics` — Recharts dashboards, outlier filter presets, portfolio KPIs
+- `/login` — authentication form
 
 **Key files**:
-- `lib/api.ts` — typed fetch helpers (no trailing slashes on URLs). `scrapeDeals(portal, pageFrom?)` accepts `'idealista' | 'redpiso' | 'fotocasa' | 'pisos' | 'idealista_html'`. `getAnalyticsStats(maxPriceSqm?, minPriceSqm?)` passes outlier bounds as query params.
-- `app/page.tsx` — home dashboard. Loads all deals client-side for quick stats; reuses `getDeals()` + `scrapeDeals()` from `lib/api`.
-- `app/deals/page.tsx` — deals table. Filters are column-header dropdowns (not a panel). Sort arrows use ▲▼ (not ↑↓ which render as emoji). Pagination state: `page`, `pageSize`. Scraping flow: Idealista API → Redpiso → Fotocasa → Pisos.com → Idealista HTML. Column visibility controlled by `visibleCols` state (persisted to `localStorage` key `deals_visible_cols`). `getSource(url)` helper derives portal name from URL.
-- `app/api/deals/scrape/route.ts` — Next.js Route Handler that proxies `POST /api/deals/scrape` to FastAPI with `maxDuration = 300` and a 4.5-minute AbortSignal timeout.
-- `app/analytics/page.tsx` — analytics dashboard using Recharts. See Analytics section below.
-- `app/analyses/page.tsx` — analysis history + new analysis form.
-- `components/Sidebar.tsx` — nav with active state.
-
-**Scraping flow per "New listings" click**:
-1. Idealista API (10 pages, uses 100 req/month quota)
-2. Redpiso JSON (3 chunks × 9 pages = 27 pages)
-3. Fotocasa via Firecrawl (3 chunks × 3 pages = 9 pages)
-4. Pisos.com via Firecrawl (3 chunks × 3 pages = 9 pages)
-5. Idealista HTML via Firecrawl (3 chunks × 3 pages = 9 pages)
-
-Each Firecrawl portal uses try/catch with break-on-failure to avoid blocking the flow. **Socket hang up fixed**: `app/api/deals/scrape/route.ts` is a Next.js Route Handler that intercepts `/api/deals/scrape` before the proxy rewrite, setting `maxDuration = 300` and `AbortSignal.timeout(270_000)` on the upstream fetch. This eliminates the 30s proxy timeout.
+- `lib/api.ts` — typed fetch helpers. `BASE` = `NEXT_PUBLIC_API_URL` (production) or `/api` (local). Forces HTTPS. `apiFetch()` injects auth header, redirects to `/login` on 401.
+- `lib/auth.ts` — auth helpers, calls backend directly for login
+- `middleware.ts` — auth guard via cookie check
+- `components/Sidebar.tsx` — nav with active state + logout button
 
 **Analytics dashboard** (`app/analytics/page.tsx`):
-Built with Recharts (BarChart, PieChart). Outlier filter presets in the header control `maxPsqm` / `minPsqm` state, which trigger a `useEffect` re-fetch on change. Charts shown:
-1. **Precio €/m² por Distrito** — horizontal bar, sorted desc, with city-average ReferenceLine.
-2. **Upside de Reforma por Distrito** — gap between avg price of "good" vs "renew" listings per district (investment signal).
-3. **Distribución por Estado** — stacked horizontal bar by district + overall pie chart (A reformar / Buen estado / Nueva).
-4. **Spread ML vs Precio Pedido** — table of districts with avg `(ml_predicted - asking) / asking`. Green > +5%, yellow 0–5%, red < 0%. **Note**: only covers deals for which ML predictions have been manually run via `/valuaciones` — it is NOT market-wide. The "Deals valorados" count is the ML-prediction sample size per district, which is small and self-selected. Will become meaningful once auto-prediction on scrape is implemented.
-5. **Cartera analizada** — KPI strip (avg IRR, MOIC, ROE) from `financial_analyses` table. Shown only if any analyses exist.
-6. *(Expandable via "Mostrar más")* Price histogram, size histogram, bedrooms distribution, amenity prevalence bars (elevator/terrace/balcony/garage/storage).
-
-KPI strip: Dataset count (with active filter label), avg city €/m², highest reform upside district, most affordable district.
-
-**Analytics backend** (`api/analytics.py`):
-`GET /analytics?max_price_sqm=25000&min_price_sqm=500` — both params default to their respective values (0 = no bound).
-`price_ok` filter tuple applied consistently to all queries for a coherent dataset across all sections.
-`by_district` returns per-district: `count`, `avg_price_sqm`, `avg_size`, `reform_upside` (avg_good − avg_renew), `ml_vs_ask_avg` (ratio of ML prediction vs asking, for deals with predictions), `condition_by_district` (renew/good/new counts).
-`portfolio_summary` aggregates `financial_analyses` table: count, avg IRR, avg MOIC, avg ROE.
-
-**CORS fix**: `main.py` adds `CORSMiddleware` allowing `localhost:3000`. Required because Next.js strips trailing slashes (308 redirect), FastAPI re-adds them (307 redirect to `localhost:8000` directly), bypassing the proxy and hitting a cross-origin block.
+Built with Recharts. Outlier filter presets control data bounds. Charts: Precio €/m² por Distrito, Upside de Reforma, Distribución por Estado, Spread ML vs Precio Pedido, Cartera analizada (KPIs), expandable histograms.
 
 ## Current Status
 
 | Component | Status |
 |---|---|
-| DB schema (all fields) | ✅ Complete — migration `b6d9bcc0b86b` applied |
-| Idealista API scraper | ✅ Working — 474 pages available (50/page), 100 req/month |
-| Idealista HTML via Firecrawl | ✅ Working — ~15,374 listings, 30/page, no quota |
-| Redpiso JSON API scraper | ✅ Working — 1,283 listings, includes broker phone |
-| Fotocasa via Firecrawl | ✅ Working — 9,439 listings, 31/page, geo-proxied to ES |
-| Pisos.com via Firecrawl | ✅ Working — 10,507 listings, 30/page, district+zone |
-| District normalisation | ✅ Working — 21 canonical Madrid districts, ~150 barrio mappings |
-| Data quality filters | ✅ Working — require price, size, Madrid district |
-| `POST /deals/scrape` endpoint | ✅ Working — 5 portal options |
-| `POST /deals/predict` (batch ML) | ✅ Working — retrained on 2,461 deals (sklearn 1.7.2, R²=0.791) |
-| ML `train.py` | ✅ Implemented — run `python -m app.ml.train` from `backend/` |
-| Analytics endpoint `GET /analytics` | ✅ Working — outlier filter params `min_price_sqm` / `max_price_sqm` |
-| Fix & Flip financial model | ✅ Working — LTV/mortgage/capex debt supported |
-| `financial_analyses` table + API | ✅ Working — migration `29ddff7d5d80` applied |
-| Frontend — home dashboard `/` | ✅ Working — quick stats, recent deals, scrape button, nav cards |
-| Frontend — `/deals` page | ✅ Working — full column filters (all columns), column visibility picker, Fuente + Fecha Listing columns |
-| Frontend — `/valuaciones` page | ✅ Working — batch ML predictions + per-row delete |
-| Frontend — `/analyses` page | ✅ Working — history table + new analysis form + per-row edit/delete |
-| Frontend — `/analytics` page | ✅ Working — Recharts dashboards, outlier filter presets, portfolio KPIs |
-| Pisos.com condition extraction | ✅ Added — keyword matching on listing text |
-| Socket hang up fix | ✅ Fixed — Route Handler with maxDuration=300 at `app/api/deals/scrape/route.ts` |
-| Edit/delete analyses + predictions | ✅ Working — PUT/DELETE endpoints + frontend inline confirm UI |
-| Backfill feature | ❌ Removed — endpoint, functions, and UI deleted |
-| Dataset size | ~2,464 clean Madrid deals (as of 2026-03-13) |
+| JWT Authentication | ✅ Complete — 6 users, login endpoint, protected routes |
+| Production deployment | ✅ Live — Railway backend + Vercel frontend |
+| DB schema (all fields + users + postal_code) | ✅ Complete |
+| 5-portal scraping pipeline | ✅ Working |
+| Postal code auto-extraction | ✅ Working — regex + ZONE_TO_POSTAL fallback (131 barrios) |
+| Pisos.com orientation + amenities | ✅ Working — keyword extraction from Firecrawl markdown |
+| Idealista API balcony fix | ✅ Working — `hasBalcony` mapped |
+| ML prediction (batch) | ✅ Working — R²=0.791, MAE≈€198k |
+| Fix & Flip financial model | ✅ Working — LTV/mortgage/capex debt |
+| All frontend pages | ✅ Working — deals, valuaciones, analyses, analytics, login |
+| Railway DB | ⚠️ Fresh — needs scraping to populate (~300 listings so far, local had ~2,464) |
 
 ## Roadmap — Next Steps
 
-### Priority 1 — Scale up data extraction
-- Current dataset: ~2,464 deals. Available inventory: Idealista HTML ~15k, Fotocasa ~9k, Pisos.com ~10k
-- Can increase page counts per scrape or run multiple scrape cycles
-- Improve forward scrapers to capture more fields (floor, zone, amenities) upfront — avoids need for per-listing detail requests
-- Redpiso condition: API has no condition field — only option is per-listing detail requests (against current strategy)
+### Workstream C — Notary Data Integration (blocked: needs penotariado.com credentials)
+- Scraper for penotariado.com real closing prices by postal code
+- New `notary_stats` DB table (postal_code, period, avg_price_sqm, transaction_count)
+- Analytics integration: ask-vs-close spread per district/barrio
+- Frontend chart: "Precio escritura vs Precio pedido"
 
-### Priority 2 — Prompt-based scraping
-- UI stub already present on home page (`/`): disabled search box "Busca propiedades… próximamente"
-- Backend: `POST /deals/scrape-prompt` — parse free text into Idealista/Redpiso filter params
-- Can use Claude API or simple regex/keyword extraction to parse
-- Reuses existing scraper functions from `portal_scraper.py`
+### Workstream D — Analytics Redesign
+- Remove/demote generic distribution charts (price histogram, size histogram, bedrooms)
+- New lead chart: "Oportunidad por Distrito" — composite opportunity score table
+- Fix `listed_over_time` to use `listed_date` instead of `created_at`
+- Simplify condition analysis to focus on reform upside signal
+- Add ML spread annotation noting it's based on manually-valued deals only
 
-### Priority 3 — Model retraining pipeline
-- `train.py` is now fully functional; run manually: `python -m app.ml.train`
-- Auto-retrain trigger: every 200 new deals OR every 3 weeks
-- Endpoint `POST /ml/retrain` to trigger manually from the frontend
-- Versioned artifact filenames (timestamp suffix)
+### Workstream E — ML Retraining
+- **E1**: `POST /ml/retrain` endpoint + "Reentrenar modelo" button in frontend
+- **E2**: Training improvements — 5-fold CV, log-transform target, orientation features, per-district outlier filtering, versioned artifacts
+- **E3**: Auto-prediction on scrape — run ML on newly ingested deals, write to predictions table
 
-### Priority 4 — Financial models
-- Fix & Flip: review `ModelEconomics.xlsx` and align debt service schedule precisely
-- New: Rental / Cap Rate model — `cap_rate = NOI / purchase_price` where `NOI = (monthly_rent × 12) - annual_opex - ibi_annual`
-- Separate endpoint + frontend section for rental analysis
+### Data Population
+- Railway DB is fresh — run scrapes from deployed app to populate
+- Available inventory: Idealista HTML ~15k, Fotocasa ~9k, Pisos.com ~10k, Redpiso ~1.3k
 
-### Phase — Deal Detail Page (`/deals/[id]`) (deferred)
-- Full property info card
-- Latest ML prediction
-- "Run Analysis" button pre-filling the analysis form with deal data
-- History of analyses run against this deal
-
-### Phase — Production (deferred)
-- Backend on Railway, frontend on Vercel, DB on Railway Postgres or Supabase
-- Basic auth: shared password or Vercel password protection
+### Other (lower priority)
+- Prompt-based scraping (search box on home page)
+- Deal detail page `/deals/[id]`
+- Rental / Cap Rate financial model
 
 ## Reference Files
 
 - `idealista-integration-guide.md` — API field mapping and request examples
-- `ModelEconomics.xlsx` — Fix & Flip Excel model (reference spec for the financial model)
-- `~/.claude/plans/warm-wobbling-snowflake.md` — full original implementation roadmap
+- `ModelEconomics.xlsx` — Fix & Flip Excel model (reference spec)
+- `~/.claude/plans/polished-strolling-rainbow.md` — full deployment + feature roadmap plan

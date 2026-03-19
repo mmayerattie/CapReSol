@@ -6,10 +6,24 @@ from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.db.models import Deal, Prediction, FinancialAnalysis
+from app.db.models import Deal, Prediction, FinancialAnalysis, NotaryStat
 from app.api.auth import get_current_user
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
+
+# Mapping notary filters → deal field values
+_CONDITION_MAP = {
+    "segunda_mano": ["renew", "good"],
+    "nueva": ["newdevelopment"],
+    "todos": None,
+}
+_PTYPE_PISOS = ["piso", "flat", "apartment", "ático", "estudio", "dúplex", "loft", "apartamento", "planta baja"]
+_PTYPE_CASAS = ["casa", "chalet", "casa adosada", "casa o chalet"]
+_PTYPE_MAP = {
+    "pisos": _PTYPE_PISOS,
+    "casas": _PTYPE_CASAS,
+    "todos": None,
+}
 
 
 @router.get("")
@@ -17,6 +31,8 @@ def get_analytics(
     db: Session = Depends(get_db),
     max_price_sqm: int = 25000,
     min_price_sqm: int = 500,
+    notary_construction: str = "segunda_mano",
+    notary_class: str = "pisos",
 ):
     # Outlier filter: exclude deals outside [min_price_sqm, max_price_sqm] range.
     # 0 means no limit on that bound.
@@ -89,6 +105,24 @@ def get_analytics(
                     else_=None,
                 )
             ).label("avg_price_good"),
+            func.avg(
+                case(
+                    (
+                        (Deal.condition == "renew") & Deal.size_sqm.isnot(None),
+                        Deal.size_sqm,
+                    ),
+                    else_=None,
+                )
+            ).label("avg_size_renew"),
+            func.avg(
+                case(
+                    (
+                        (Deal.condition == "newdevelopment") & Deal.asking_price.isnot(None) & Deal.size_sqm.isnot(None) & (Deal.size_sqm != 0),
+                        Deal.asking_price / Deal.size_sqm,
+                    ),
+                    else_=None,
+                )
+            ).label("avg_price_new"),
         )
         .filter(Deal.district.isnot(None), *price_ok)
         .group_by(Deal.district)
@@ -144,6 +178,11 @@ def get_analytics(
                 "pct_new": pct_new,
                 "avg_price_renew": avg_price_renew,
                 "avg_price_good": avg_price_good,
+                "avg_price_new": float(r.avg_price_new) if r.avg_price_new is not None else None,
+                "avg_size_renew": float(r.avg_size_renew) if r.avg_size_renew is not None else None,
+                "n_renew": int(r.n_renew),
+                "n_good": int(r.n_good),
+                "n_new": int(r.n_new),
                 "reform_upside": reform_upside,
                 "ml_vs_ask_avg": ml_vs_ask_avg,
             }
@@ -254,16 +293,16 @@ def get_analytics(
     }
 
     # ------------------------------------------------------------------ #
-    # 8. listed_over_time — group by year-month of created_at (PostgreSQL)
+    # 8. listed_over_time — group by year-month of listed_date (not created_at)
     # ------------------------------------------------------------------ #
     month_rows = (
         db.query(
-            func.to_char(Deal.created_at, "YYYY-MM").label("month"),
+            func.to_char(Deal.listed_date, "YYYY-MM").label("month"),
             func.count(Deal.id).label("count"),
         )
-        .filter(Deal.created_at.isnot(None))
-        .group_by(func.to_char(Deal.created_at, "YYYY-MM"))
-        .order_by(func.to_char(Deal.created_at, "YYYY-MM").asc())
+        .filter(Deal.listed_date.isnot(None), *price_ok)
+        .group_by(func.to_char(Deal.listed_date, "YYYY-MM"))
+        .order_by(func.to_char(Deal.listed_date, "YYYY-MM").asc())
         .all()
     )
     listed_over_time = [
@@ -288,6 +327,137 @@ def get_analytics(
     }
 
     # ------------------------------------------------------------------ #
+    # 10. notary_spread — ask vs close price, unified filters on both sides
+    # ------------------------------------------------------------------ #
+
+    # Build postal_code → district mapping from deals
+    postal_district_rows = (
+        db.query(Deal.postal_code, Deal.district)
+        .filter(Deal.postal_code.isnot(None), Deal.district.isnot(None))
+        .distinct()
+        .all()
+    )
+    postal_to_district: dict = {}
+    for row in postal_district_rows:
+        if row.postal_code not in postal_to_district:
+            postal_to_district[row.postal_code] = row.district
+
+    # Helper: aggregate notary rows by district (weighted by transaction count)
+    def _agg_notary(construction_type: str, property_class: str) -> dict:
+        rows = (
+            db.query(NotaryStat)
+            .filter(
+                NotaryStat.construction_type == construction_type,
+                NotaryStat.property_class == property_class,
+            )
+            .all()
+        )
+        agg: dict = {}
+        for ns in rows:
+            district = postal_to_district.get(ns.postal_code)
+            if not district or not ns.notary_price_sqm:
+                continue
+            if district not in agg:
+                agg[district] = {"sum": 0, "count": 0, "transactions": 0}
+            a = agg[district]
+            a["sum"] += ns.notary_price_sqm * (ns.notary_transactions or 1)
+            a["count"] += ns.notary_transactions or 1
+            a["transactions"] += ns.notary_transactions or 0
+        return {d: {"psqm": round(v["sum"] / v["count"]), "transactions": v["transactions"]}
+                for d, v in agg.items() if v["count"] > 0}
+
+    # Main notary aggregation for the selected filters
+    district_notary = _agg_notary(notary_construction, notary_class)
+
+    # Filtered asking price per district (unified with notary filter dimensions)
+    deal_conditions = _CONDITION_MAP.get(notary_construction)
+    deal_types = _PTYPE_MAP.get(notary_class)
+
+    filtered_ask_q = (
+        db.query(
+            Deal.district,
+            func.avg(Deal.asking_price / Deal.size_sqm).label("avg_psqm"),
+            func.count(Deal.id).label("cnt"),
+        )
+        .filter(Deal.district.isnot(None), *price_ok)
+    )
+    if deal_conditions:
+        filtered_ask_q = filtered_ask_q.filter(Deal.condition.in_(deal_conditions))
+    if deal_types:
+        filtered_ask_q = filtered_ask_q.filter(func.lower(Deal.property_type).in_(deal_types))
+    filtered_ask_rows = filtered_ask_q.group_by(Deal.district).all()
+    filtered_ask = {r.district: {"psqm": float(r.avg_psqm), "count": int(r.cnt)}
+                    for r in filtered_ask_rows if r.avg_psqm}
+
+    notary_by_district = []
+    for d in by_district:
+        dn = district_notary.get(d["district"])
+        fa = filtered_ask.get(d["district"])
+        if dn and fa:
+            spread_pct = (fa["psqm"] - dn["psqm"]) / dn["psqm"] * 100
+            notary_by_district.append({
+                "district": d["district"],
+                "avg_asking_psqm": round(fa["psqm"]),
+                "avg_notary_psqm": dn["psqm"],
+                "spread_pct": round(spread_pct, 1),
+                "notary_transactions": dn["transactions"],
+                "asking_count": fa["count"],
+            })
+    notary_by_district.sort(key=lambda x: x["spread_pct"])
+
+    # Notary prices by construction type (for flexible upside comparison)
+    notary_prices_by_type = {
+        "segunda_mano": {d: v["psqm"] for d, v in _agg_notary("segunda_mano", notary_class).items()},
+        "nueva": {d: v["psqm"] for d, v in _agg_notary("nueva", notary_class).items()},
+    }
+
+    # ------------------------------------------------------------------ #
+    # 11. opportunity_score — composite rank per district
+    # ------------------------------------------------------------------ #
+    # Score = weighted rank across: low €/m² (entry price), high reform upside,
+    # positive ML spread. Each metric ranked 1..N (best=1), then averaged.
+    scored = []
+    for d in by_district:
+        scored.append({**d, "_score_raw": []})
+
+    # Rank by avg_price_sqm ascending (cheapest = best)
+    by_price_asc = sorted(
+        [d for d in scored if d.get("avg_price_sqm") is not None],
+        key=lambda d: d["avg_price_sqm"],
+    )
+    for rank, d in enumerate(by_price_asc, 1):
+        d["_score_raw"].append(rank)
+
+    # Rank by reform_upside descending (biggest gap = best)
+    by_upside = sorted(
+        [d for d in scored if d.get("reform_upside") is not None and d["reform_upside"] > 0],
+        key=lambda d: d["reform_upside"],
+        reverse=True,
+    )
+    for rank, d in enumerate(by_upside, 1):
+        d["_score_raw"].append(rank)
+
+    # Rank by ml_vs_ask_avg descending (most undervalued = best)
+    by_ml = sorted(
+        [d for d in scored if d.get("ml_vs_ask_avg") is not None],
+        key=lambda d: d["ml_vs_ask_avg"],
+        reverse=True,
+    )
+    for rank, d in enumerate(by_ml, 1):
+        d["_score_raw"].append(rank)
+
+    # Compute avg rank → lower is better → convert to 1-10 score
+    for d in scored:
+        ranks = d.pop("_score_raw")
+        d["opportunity_score"] = round(sum(ranks) / len(ranks), 1) if ranks else None
+
+    # Sort by opportunity_score ascending (best first)
+    opportunity_table = sorted(
+        [d for d in scored if d.get("opportunity_score") is not None],
+        key=lambda d: d["opportunity_score"],
+    )
+
+    # ------------------------------------------------------------------ #
     # Return
     # ------------------------------------------------------------------ #
     return {
@@ -302,4 +472,7 @@ def get_analytics(
         "amenities": amenities,
         "listed_over_time": listed_over_time,
         "portfolio_summary": portfolio_summary,
+        "opportunity_table": opportunity_table,
+        "notary_by_district": notary_by_district,
+        "notary_prices_by_type": notary_prices_by_type,
     }

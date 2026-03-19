@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { getDeals, Deal } from '../../lib/api'
 import * as XLSX from 'xlsx'
 
@@ -187,12 +188,27 @@ function SortFilterTh({
 const PAGE_SIZES = [25, 50, 100, 0]
 
 export default function DealsPage() {
+  return (
+    <Suspense fallback={<p className="text-gray-400 text-sm p-8">Cargando...</p>}>
+      <DealsPageInner />
+    </Suspense>
+  )
+}
+
+function DealsPageInner() {
+  const searchParams = useSearchParams()
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState('')
 
-  const [filterDistricts, setFilterDistricts] = useState<Set<string>>(new Set())
-  const [filterConditions, setFilterConditions] = useState<Set<string>>(new Set())
+  const [filterDistricts, setFilterDistricts] = useState<Set<string>>(() => {
+    const d = searchParams.get('district')
+    return d ? new Set([d]) : new Set()
+  })
+  const [filterConditions, setFilterConditions] = useState<Set<string>>(() => {
+    const c = searchParams.get('condition')
+    return c ? new Set([c]) : new Set()
+  })
   const [filterBedrooms, setFilterBedrooms] = useState<Set<number>>(new Set())
   const [filterBaths, setFilterBaths] = useState<Set<number>>(new Set())
   const [filterSources, setFilterSources] = useState<Set<string>>(new Set())

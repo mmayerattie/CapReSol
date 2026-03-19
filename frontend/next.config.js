@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
-const BACKEND = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000').replace(/^http:\/\//, 'https://')
+const _raw = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const BACKEND = _raw.includes('localhost') ? _raw : _raw.replace(/^http:\/\//, 'https://')
 
 const nextConfig = {
   async rewrites() {

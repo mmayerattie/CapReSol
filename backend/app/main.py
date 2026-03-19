@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import messages, deals, analyses, analytics, auth
+from app.api import messages, deals, analyses, analytics, auth, ml, notary
 from app.config import settings
 
 app = FastAPI(title="CapReSol API")
@@ -18,6 +18,8 @@ app.include_router(messages.router)
 app.include_router(deals.router)
 app.include_router(analyses.router)
 app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+app.include_router(ml.router)
+app.include_router(notary.router)
 
 
 @app.get("/")

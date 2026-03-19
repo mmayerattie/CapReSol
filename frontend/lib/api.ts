@@ -3,7 +3,8 @@ import { getToken, clearToken } from './auth'
 // In production (Vercel), call Railway directly — Next.js rewrites to external
 // URLs behave as client-visible redirects, not server-side proxies, which
 // triggers Mixed Content blocks. CORS on the backend allows the Vercel origin.
-const BASE = (process.env.NEXT_PUBLIC_API_URL ?? '/api').replace(/^http:\/\//, 'https://')
+const _apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api'
+const BASE = _apiUrl.includes('localhost') ? _apiUrl : _apiUrl.replace(/^http:\/\//, 'https://')
 
 function authHeaders(): HeadersInit {
   const token = getToken()
@@ -207,6 +208,11 @@ export interface DistrictStats {
   pct_new: number
   avg_price_renew: number | null
   avg_price_good: number | null
+  avg_price_new: number | null
+  avg_size_renew: number | null
+  n_renew: number
+  n_good: number
+  n_new: number
   reform_upside: number | null
   ml_vs_ask_avg: number | null
 }
@@ -230,12 +236,22 @@ export interface AnalyticsStats {
   amenities: { elevator: number; terrace: number; balcony: number; garage: number; storage_room: number }
   listed_over_time: { month: string; count: number }[]
   portfolio_summary: { total_analyses: number; avg_irr: number | null; avg_moic: number | null; avg_roe: number | null }
+  opportunity_table: (DistrictStats & { opportunity_score: number | null })[]
+  notary_by_district: { district: string; avg_asking_psqm: number; avg_notary_psqm: number; spread_pct: number; notary_transactions: number; asking_count: number }[]
+  notary_prices_by_type: { segunda_mano: Record<string, number>; nueva: Record<string, number> }
 }
 
-export async function getAnalyticsStats(maxPriceSqm?: number, minPriceSqm?: number): Promise<AnalyticsStats> {
+export async function getAnalyticsStats(
+  maxPriceSqm?: number,
+  minPriceSqm?: number,
+  notaryConstruction?: string,
+  notaryClass?: string,
+): Promise<AnalyticsStats> {
   const params = new URLSearchParams()
   if (maxPriceSqm != null) params.set('max_price_sqm', String(maxPriceSqm))
   if (minPriceSqm != null) params.set('min_price_sqm', String(minPriceSqm))
+  if (notaryConstruction) params.set('notary_construction', notaryConstruction)
+  if (notaryClass) params.set('notary_class', notaryClass)
   const qs = params.toString()
   const res = await apiFetch(`${BASE}/analytics${qs ? `?${qs}` : ''}`)
   if (!res.ok) throw new Error(await res.text())

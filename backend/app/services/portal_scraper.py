@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.config import settings
-from app.db.models import Deal
+from app.db.models import Deal, Prediction
 
 logger = logging.getLogger(__name__)
 
@@ -523,7 +523,7 @@ def _parse_idealista_html_listings(markdown: str) -> list[dict]:
 
         # Get context after the title link (price + features)
         end = title_match.end()
-        context_after = markdown[end:end + 1500]
+        context_after = markdown[end:end + 3000]
 
         # Price: first €-amount after the title
         price_match = _RE_IDEALISTA_PRICE.search(context_after)
@@ -539,13 +539,17 @@ def _parse_idealista_html_listings(markdown: str) -> list[dict]:
         cb_idx = context_after.lower().find("características básicas")
         if cb_idx == -1:
             cb_idx = context_after.lower().find("caracteristicas basicas")
-        features_ctx = context_after[cb_idx:cb_idx + 800] if cb_idx != -1 else context_after
+        features_ctx = context_after[cb_idx:cb_idx + 1200] if cb_idx != -1 else context_after
 
         # Features
         hab = _RE_IDEALISTA_HAB.search(features_ctx)
         sqm = _RE_IDEALISTA_SQM.search(features_ctx)
         banos = _RE_IDEALISTA_BANOS.search(features_ctx)
+        if not banos:
+            banos = _RE_IDEALISTA_BANOS.search(context_after)
         floor = _RE_IDEALISTA_FLOOR.search(features_ctx)
+        if not floor:
+            floor = _RE_IDEALISTA_FLOOR.search(context_after)
 
         # Parse title: "Piso en Calle X, Barrio, Madrid"
         # → address = full title minus property type prefix
@@ -595,9 +599,9 @@ def _parse_idealista_html_listings(markdown: str) -> list[dict]:
             condition = None
 
         # Orientation: parse "Orientación sur, oeste" from features section
-        ori_match = re.search(r'[Oo]rientaci[oó]n\s*:?\s*([^\n,\*]+)', features_ctx)
+        ori_match = re.search(r'[Oo]rientaci[oó]n\s*:?\s*([^\n\*]+?)(?:\n|\*|$)', features_ctx)
         if ori_match:
-            orientation = ori_match.group(1).strip()
+            orientation = ori_match.group(1).strip().rstrip(',')
         elif "exterior" in ctx_lower:
             orientation = "exterior"
         else:
@@ -1333,4 +1337,59 @@ def ingest_listings(db: Session, listings: list[dict]) -> int:
         "Upserted %d listings: %d new, %d updated.",
         len(valid), inserted, updated,
     )
+
+    # --- Auto-predict on newly ingested deals ---
+    try:
+        _auto_predict_new_deals(db, [d["url"] for d in valid if d["url"] not in existing_urls])
+    except Exception as exc:
+        logger.error("Auto-prediction failed (scraping still succeeded): %s", exc)
+
     return inserted
+
+
+def _auto_predict_new_deals(db: Session, new_urls: list[str]):
+    """
+    Run ML prediction on newly inserted deals that don't already have a prediction.
+    Writes results to the predictions table with model_version='auto'.
+    Wrapped in try/except by the caller so ML errors never break scraping.
+    """
+    if not new_urls:
+        return
+
+    from app.ml.features import deal_to_features
+    from app.ml.model import predict_price_from_features
+
+    # Fetch newly inserted deals that have no prediction yet
+    new_deals = (
+        db.query(Deal)
+        .filter(
+            Deal.url.in_(new_urls),
+            ~Deal.id.in_(
+                db.query(Prediction.deal_id)
+            ),
+        )
+        .all()
+    )
+
+    if not new_deals:
+        return
+
+    predicted_count = 0
+    for deal in new_deals:
+        try:
+            features = deal_to_features(deal)
+            predicted_price = predict_price_from_features(features)
+            prediction = Prediction(
+                deal_id=deal.id,
+                predicted_price=predicted_price,
+                model_version="auto",
+            )
+            db.add(prediction)
+            predicted_count += 1
+        except Exception as exc:
+            logger.warning("Auto-predict failed for deal %s: %s", deal.url, exc)
+            continue
+
+    if predicted_count:
+        db.commit()
+        logger.info("Auto-predicted %d / %d new deals.", predicted_count, len(new_deals))

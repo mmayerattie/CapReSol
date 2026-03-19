@@ -30,7 +30,8 @@ export function isAuthenticated(): boolean {
 }
 
 export async function login(username: string, password: string): Promise<void> {
-  const backend = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/^http:\/\//, 'https://')
+  const _raw = process.env.NEXT_PUBLIC_API_URL ?? ''
+  const backend = _raw.includes('localhost') ? _raw : _raw.replace(/^http:\/\//, 'https://')
   const url = backend ? `${backend}/auth/login` : '/api/auth/login'
   const res = await fetch(url, {
     method: 'POST',
