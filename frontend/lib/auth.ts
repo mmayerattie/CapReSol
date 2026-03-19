@@ -30,7 +30,9 @@ export function isAuthenticated(): boolean {
 }
 
 export async function login(username: string, password: string): Promise<void> {
-  const res = await fetch('/api/auth/login', {
+  const backend = process.env.NEXT_PUBLIC_API_URL ?? ''
+  const url = backend ? `${backend}/auth/login` : '/api/auth/login'
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
