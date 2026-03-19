@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export function middleware(request: NextRequest) {
-  const auth = request.cookies.get('capresolAuth')
-  if (!auth && !request.nextUrl.pathname.startsWith('/login')) {
+  const token = request.cookies.get('capresol_token')
+  const isLoginPage = request.nextUrl.pathname.startsWith('/login')
+
+  if (!token && !isLoginPage) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
   return NextResponse.next()

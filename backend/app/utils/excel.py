@@ -1,6 +1,6 @@
 """
 Fix & Flip financial model — pure Python implementation.
-Formula reference: ModelEconomics.xlsx (Claudio Coello 73 example)
+Formula reference: ModelEconomics.xlsx
 
 Cash flow convention: negative = outflow, positive = inflow.
 All cash flows are from the EQUITY investor perspective (debt is netted out).

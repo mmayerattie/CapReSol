@@ -16,6 +16,14 @@ from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String, unique=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
 # Messages data schema
 class Message(Base):
     __tablename__ = "messages"
@@ -62,6 +70,7 @@ class Deal(Base):
     elevator = Column(Boolean, default=False)
     garage = Column(Boolean, default=False)
     listed_date = Column(Date)
+    postal_code = Column(String(5))
     created_at = Column(DateTime, server_default=func.now())
 
     message = relationship("Message", back_populates="deal")

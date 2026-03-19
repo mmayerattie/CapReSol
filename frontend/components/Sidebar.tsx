@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { logout } from '@/lib/auth'
 
 const links = [
   { href: '/',            label: 'Inicio',      exact: true },
@@ -30,6 +31,14 @@ export default function Sidebar() {
           {label}
         </Link>
       ))}
+      <div className="mt-auto">
+        <button
+          onClick={logout}
+          className="w-full px-3 py-2 rounded-md text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 text-left transition-colors"
+        >
+          Cerrar sesión
+        </button>
+      </div>
     </aside>
   )
 }

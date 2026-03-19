@@ -1,4 +1,23 @@
+import { getToken, clearToken } from './auth'
+
 const BASE = '/api'
+
+function authHeaders(): HeadersInit {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const res = await fetch(url, {
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers ?? {}) },
+  })
+  if (res.status === 401) {
+    clearToken()
+    if (typeof window !== 'undefined') window.location.href = '/login'
+  }
+  return res
+}
 
 export interface Deal {
   id: string
@@ -90,7 +109,7 @@ export interface FlipInput {
 }
 
 export async function getDeals(): Promise<Deal[]> {
-  const res = await fetch(`${BASE}/deals`)
+  const res = await apiFetch(`${BASE}/deals`)
   if (!res.ok) throw new Error('Failed to fetch deals')
   return res.json()
 }
@@ -108,7 +127,7 @@ export async function scrapeDeals(
     : portal === 'idealista_html'
     ? { portal: 'idealista_html', page_from: pageFrom, max_pages: 3 }
     : { portal: 'idealista', max_pages: 10 }
-  const res = await fetch(`${BASE}/deals/scrape`, {
+  const res = await apiFetch(`${BASE}/deals/scrape`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -118,7 +137,7 @@ export async function scrapeDeals(
 }
 
 export async function predictDeals(dealIds: string[]): Promise<Prediction[]> {
-  const res = await fetch(`${BASE}/deals/predict`, {
+  const res = await apiFetch(`${BASE}/deals/predict`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deal_ids: dealIds }),
@@ -128,13 +147,13 @@ export async function predictDeals(dealIds: string[]): Promise<Prediction[]> {
 }
 
 export async function getAnalyses(): Promise<Analysis[]> {
-  const res = await fetch(`${BASE}/analyses`)
+  const res = await apiFetch(`${BASE}/analyses`)
   if (!res.ok) throw new Error('Failed to fetch analyses')
   return res.json()
 }
 
 export async function createAnalysis(data: FlipInput): Promise<Analysis> {
-  const res = await fetch(`${BASE}/analyses`, {
+  const res = await apiFetch(`${BASE}/analyses`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -147,7 +166,7 @@ export async function createAnalysis(data: FlipInput): Promise<Analysis> {
 }
 
 export async function deleteAnalysis(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/analyses/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`${BASE}/analyses/${id}`, { method: 'DELETE' })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error((body as any)?.detail ?? `HTTP ${res.status}`)
@@ -155,7 +174,7 @@ export async function deleteAnalysis(id: string): Promise<void> {
 }
 
 export async function updateAnalysis(id: string, data: FlipInput): Promise<Analysis> {
-  const res = await fetch(`${BASE}/analyses/${id}`, {
+  const res = await apiFetch(`${BASE}/analyses/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -168,7 +187,7 @@ export async function updateAnalysis(id: string, data: FlipInput): Promise<Analy
 }
 
 export async function deletePrediction(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/deals/predictions/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`${BASE}/deals/predictions/${id}`, { method: 'DELETE' })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error((body as any)?.detail ?? `HTTP ${res.status}`)
@@ -215,7 +234,7 @@ export async function getAnalyticsStats(maxPriceSqm?: number, minPriceSqm?: numb
   if (maxPriceSqm != null) params.set('max_price_sqm', String(maxPriceSqm))
   if (minPriceSqm != null) params.set('min_price_sqm', String(minPriceSqm))
   const qs = params.toString()
-  const res = await fetch(`${BASE}/analytics${qs ? `?${qs}` : ''}`)
+  const res = await apiFetch(`${BASE}/analytics${qs ? `?${qs}` : ''}`)
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
@@ -235,7 +254,7 @@ export interface PredictionWithDeal {
 }
 
 export async function getPredictions(): Promise<PredictionWithDeal[]> {
-  const res = await fetch(`${BASE}/deals/predictions`)
+  const res = await apiFetch(`${BASE}/deals/predictions`)
   if (!res.ok) throw new Error('Failed to fetch predictions')
   return res.json()
 }

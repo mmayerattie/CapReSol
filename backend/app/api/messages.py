@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db import models
 from app.api.schemas import MessageCreate, MessageRead
+from app.api.auth import get_current_user
 
-router = APIRouter(prefix="/messages", tags=["messages"])
+router = APIRouter(prefix="/messages", tags=["messages"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/", response_model=MessageRead)

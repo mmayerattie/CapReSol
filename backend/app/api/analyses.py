@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db import models
 from app.api.schemas import FlipInput, FlipResult
+from app.api.auth import get_current_user
 from app.utils.excel import run_flip_analysis
 
-router = APIRouter(prefix="/analyses", tags=["analyses"])
+router = APIRouter(prefix="/analyses", tags=["analyses"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/", response_model=List[FlipResult])

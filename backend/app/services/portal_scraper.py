@@ -178,6 +178,118 @@ def normalize_district(raw: str | None) -> str | None:
 # Set of canonical names for quick membership checks
 CANONICAL_DISTRICTS = set(_DISTRICT_ALIASES.keys())
 
+# ---------------------------------------------------------------------------
+# Barrio → primary postal code mapping (Madrid)
+# Source: Ayuntamiento de Madrid official barrio structure + Correos data
+# ---------------------------------------------------------------------------
+ZONE_TO_POSTAL: dict[str, str] = {
+    # Distrito 01 - Centro
+    "Palacio": "28013",          "Embajadores": "28012",
+    "Cortes": "28014",           "Justicia": "28004",
+    "Universidad": "28015",      "Sol": "28013",
+    # Distrito 02 - Arganzuela
+    "Imperial": "28005",         "Acacias": "28005",
+    "Chopera": "28045",          "Legazpi": "28045",
+    "Delicias": "28045",         "Palos de la Frontera": "28045",
+    "Atocha": "28045",
+    # Distrito 03 - Retiro
+    "Pacífico": "28007",         "Adelfas": "28007",
+    "Estrella": "28007",         "Ibiza": "28009",
+    "Los Jerónimos": "28014",    "Niño Jesús": "28009",
+    # Distrito 04 - Salamanca
+    "Recoletos": "28001",        "Goya": "28001",
+    "Fuente del Berro": "28028", "Guindalera": "28028",
+    "Lista": "28006",            "Castellana": "28006",
+    # Distrito 05 - Chamartín
+    "El Viso": "28002",          "Prosperidad": "28002",
+    "Ciudad Jardín": "28027",    "Hispanoamérica": "28016",
+    "Nueva España": "28016",     "Castilla": "28036",
+    # Distrito 06 - Tetuán
+    "Bellas Vistas": "28020",    "Cuatro Caminos": "28020",
+    "Castillejos": "28020",      "Almenara": "28029",
+    "Valdeacederas": "28029",    "Berruguete": "28039",
+    # Distrito 07 - Chamberí
+    "Gaztambide": "28015",       "Arapiles": "28003",
+    "Trafalgar": "28010",        "Almagro": "28010",
+    "Ríos Rosas": "28003",       "Vallehermoso": "28015",
+    # Distrito 08 - Fuencarral-El Pardo
+    "El Pardo": "28048",         "Fuentelarreina": "28035",
+    "Peñagrande": "28035",       "Pilar": "28034",
+    "La Paz": "28034",           "Valverde": "28034",
+    "Mirasierra": "28034",       "El Goloso": "28049",
+    # Distrito 09 - Moncloa-Aravaca
+    "Casa de Campo": "28011",    "Argüelles": "28008",
+    "Ciudad Universitaria": "28040", "Valdezarza": "28023",
+    "Valdemarin": "28023",       "El Plantío": "28023",
+    "Aravaca": "28023",
+    # Distrito 10 - Latina
+    "Los Cármenes": "28044",     "Puerta del Ángel": "28011",
+    "Lucero": "28011",           "Aluche": "28044",
+    "Campamento": "28024",       "Cuatro Vientos": "28044",
+    "Águilas": "28044",
+    # Distrito 11 - Carabanchel
+    "Comillas": "28019",         "Opañel": "28019",
+    "San Isidro": "28019",       "Vista Alegre": "28019",
+    "Puerta Bonita": "28019",    "Buenavista": "28047",
+    "Abrantes": "28025",
+    # Distrito 12 - Usera
+    "Orcasitas": "28041",        "Orcasur": "28041",
+    "San Fermín": "28041",       "Almendrales": "28026",
+    "Moscardó": "28026",         "Zofio": "28026",
+    "Pradolongo": "28026",
+    # Distrito 13 - Puente de Vallecas
+    "Entrevías": "28018",        "San Diego": "28018",
+    "Palomeras Bajas": "28018",  "Palomeras Sureste": "28038",
+    "Portazgo": "28038",         "Numancia": "28053",
+    # Distrito 14 - Moratalaz
+    "Pavones": "28030",          "Horcajo": "28030",
+    "Marroquina": "28030",       "Media Legua": "28030",
+    "Fontarrón": "28030",        "Vinateros": "28030",
+    # Distrito 15 - Ciudad Lineal
+    "Ventas": "28017",           "Pueblo Nuevo": "28017",
+    "Quintana": "28022",         "La Concepción": "28017",
+    "San Pascual": "28033",      "San Juan Bautista": "28033",
+    "Colina": "28033",           "Atalaya": "28033",
+    "Costillares": "28033",
+    # Distrito 16 - Hortaleza
+    "Palomas": "28043",          "Piovera": "28016",
+    "Canillas": "28043",         "Pinar del Rey": "28043",
+    "Apóstol Santiago": "28043", "Valdefuentes": "28050",
+    # Distrito 17 - Villaverde
+    "Villaverde Alto": "28021",  "San Cristóbal": "28021",
+    "Butarque": "28021",         "Los Rosales": "28021",
+    "Ángeles": "28041",
+    # Distrito 18 - Villa de Vallecas
+    "Casco Histórico de Vallecas": "28031",
+    "Santa Eugenia": "28052",    "Ensanche de Vallecas": "28051",
+    # Distrito 19 - Vicálvaro
+    "Casco Histórico de Vicálvaro": "28032",
+    "Valdebernardo": "28032",    "Valderrivas": "28052",
+    "El Cañaveral": "28052",
+    # Distrito 20 - San Blas-Canillejas
+    "Simancas": "28022",         "Hellín": "28022",
+    "Amposta": "28022",          "Arcos": "28037",
+    "Rosas": "28037",            "Rejas": "28037",
+    "Canillejas": "28022",       "El Salvador": "28022",
+    # Distrito 21 - Barajas
+    "Alameda de Osuna": "28042", "Aeropuerto": "28042",
+    "Casco Histórico de Barajas": "28042",
+    "Timón": "28042",            "Corralejos": "28042",
+}
+
+_POSTAL_CODE_RE = re.compile(r'\b(28\d{3})\b')
+
+
+def extract_postal_code(text: Optional[str], zone: Optional[str] = None) -> Optional[str]:
+    """Extract Madrid postal code from raw text, falling back to zone lookup."""
+    if text:
+        m = _POSTAL_CODE_RE.search(text)
+        if m:
+            return m.group(1)
+    if zone:
+        return ZONE_TO_POSTAL.get(zone)
+    return None
+
 
 IDEALISTA_TOKEN_URL = "https://api.idealista.com/oauth/token"
 IDEALISTA_SEARCH_URL = "https://api.idealista.com/3.5/es/search"
@@ -270,7 +382,7 @@ def _parse_api_listing(item: dict) -> dict:
         "listed_date": _parse_date(item.get("modificationDate") or item.get("date")),
         "broker_name": None,
         "broker_contact": None,
-        "balcony": False,  # not returned by API directly
+        "balcony": bool(item.get("hasBalcony")),
     }
 
 
@@ -1020,6 +1132,27 @@ def _parse_pisos_listings(markdown: str) -> list[dict]:
         elif any(k in text_lower for k in ['buen estado', 'bien conservado', 'muy buen estado', 'segunda mano']):
             condition = 'good'
 
+        # Orientation from context text
+        orientation = None
+        orient_lower = context_after.lower()
+        for kw, val in [
+            ('noreste', 'noreste'), ('noroeste', 'noroeste'),
+            ('sureste', 'sureste'), ('suroeste', 'suroeste'),
+            ('norte', 'norte'), ('sur', 'sur'),
+            ('este', 'este'), ('oeste', 'oeste'),
+            ('exterior', 'exterior'),
+        ]:
+            if kw in orient_lower:
+                orientation = val
+                break
+
+        # Amenities from context
+        elevator = 'ascensor' in text_lower
+        terrace = 'terraza' in text_lower
+        balcony = 'balcón' in text_lower or 'balcon' in text_lower
+        storage_room = 'trastero' in text_lower
+        garage = 'garaje' in text_lower or 'parking' in text_lower or 'garage' in text_lower
+
         listing = {
             "url": url,
             "address": address,
@@ -1034,13 +1167,13 @@ def _parse_pisos_listings(markdown: str) -> list[dict]:
             "bedrooms": int(habs.group(1)) if habs else None,
             "bathrooms": int(banos.group(1)) if banos else None,
             "floor": int(floor.group(1)) if floor else None,
-            "elevator": False,
-            "garage": False,
-            "terrace": False,
-            "balcony": False,
-            "storage_room": False,
+            "elevator": elevator,
+            "garage": garage,
+            "terrace": terrace,
+            "balcony": balcony,
+            "storage_room": storage_room,
             "condition": condition,
-            "orientation": None,
+            "orientation": orientation,
             "listed_date": date.today(),
             "broker_name": None,
             "broker_contact": None,
@@ -1134,6 +1267,7 @@ def ingest_listings(db: Session, listings: list[dict]) -> int:
         "size_sqm", "bedrooms", "bathrooms", "floor",
         "district", "zone", "address", "condition", "orientation",
         "broker_name", "broker_contact", "listed_date", "property_type",
+        "postal_code",
     ]
     # Fields always overwritten with the latest scraped value
     OVERWRITE_FIELDS = [
@@ -1144,6 +1278,11 @@ def ingest_listings(db: Session, listings: list[dict]) -> int:
     # Normalise district names to Madrid's 21 canonical districts
     for d in listings:
         d["district"] = normalize_district(d.get("district"))
+        # Derive postal code if not already present
+        if not d.get("postal_code"):
+            d["postal_code"] = extract_postal_code(
+                d.get("address") or d.get("url"), d.get("zone")
+            )
 
     # Filter: require URL, asking_price, size_sqm, and a canonical Madrid district
     valid = [

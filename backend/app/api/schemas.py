@@ -54,6 +54,7 @@ class DealBase(BaseModel):
     elevator: Optional[bool] = False
     garage: Optional[bool] = False
     listed_date: Optional[date] = None
+    postal_code: Optional[str] = None
 
 
 class DealCreate(DealBase):

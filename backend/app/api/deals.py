@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db import models
 from app.api.schemas import DealRead, DealCreate, PredictRequest, PredictionRead, PredictionWithDeal
+from app.api.auth import get_current_user
 from app.services.extraction import create_deal_from_payload
 from app.services.portal_scraper import (
     scrape_idealista_api,
@@ -19,7 +20,7 @@ from app.services.portal_scraper import (
 from app.ml.features import deal_to_features
 from app.ml.model import predict_price_from_features
 
-router = APIRouter(prefix="/deals", tags=["deals"])
+router = APIRouter(prefix="/deals", tags=["deals"], dependencies=[Depends(get_current_user)])
 
 
 # ---------- Existing endpoints ----------

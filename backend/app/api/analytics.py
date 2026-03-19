@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models import Deal, Prediction, FinancialAnalysis
+from app.api.auth import get_current_user
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("")
