@@ -6,10 +6,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Settings:
-    DATABASE_URL: str = os.getenv(
+    # Railway provides postgresql://, SQLAlchemy requires postgresql+psycopg2://
+    _raw_db_url: str = os.getenv(
         "DATABASE_URL",
         "postgresql+psycopg2://postgres:postgres@localhost:5432/capresol"
     )
+    DATABASE_URL: str = _raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     IDEALISTA_API_KEY: str = os.getenv("IDEALISTA_API_KEY", "")
     IDEALISTA_SECRET: str = os.getenv("IDEALISTA_SECRET", "")
     FIRECRAWL_API_KEY: str = os.getenv("FIRECRAWL_API_KEY", "")
