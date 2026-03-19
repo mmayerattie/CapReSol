@@ -10,18 +10,11 @@ from alembic import context
 # FIX PYTHON PATH (critical)
 # -------------------------------------------------------
 
-# Absolute path to /CapReSol (project root)
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-
-# Absolute path to /CapReSol/backend
+# /app/alembic/../  ==>  /app  (the backend root, where the `app` package lives)
 backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-# Add both paths to sys.path if not already there
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
 if backend_root not in sys.path:
-    sys.path.insert(1, backend_root)
+    sys.path.insert(0, backend_root)
 
 # -------------------------------------------------------
 # Import your FastAPI app modules
