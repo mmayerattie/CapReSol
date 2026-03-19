@@ -1,11 +1,9 @@
 'use client'
 
 import { useState, FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
 import { login } from '@/lib/auth'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -17,7 +15,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(username, password)
-      router.push('/')
+      window.location.href = '/'
     } catch (err: any) {
       setError(err.message ?? 'Error al iniciar sesión')
     } finally {
