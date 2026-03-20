@@ -195,3 +195,164 @@ def delete_prediction(prediction_id: uuid.UUID, db: Session = Depends(get_db)):
     db.delete(obj)
     db.commit()
     return Response(status_code=204)
+
+
+# ---------- Postal code backfill ----------
+
+@router.post("/backfill-postal-codes")
+def backfill_postal_codes(db: Session = Depends(get_db)):
+    """Backfill postal_code for deals that have a zone but no postal_code."""
+    from app.services.portal_scraper import ZONE_TO_POSTAL
+    import unicodedata
+    import re
+
+    def strip_accents(s: str) -> str:
+        nfkd = unicodedata.normalize("NFKD", s)
+        return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+    # Build accent-insensitive lookup
+    lookup = {}
+    for name, code in ZONE_TO_POSTAL.items():
+        lookup[name.lower()] = code
+        lookup[strip_accents(name).lower()] = code
+
+    # Manual overrides for common compound zone names
+    manual = {
+        "lavapiés-embajadores": "28012", "lavapies-embajadores": "28012",
+        "embajadores-lavapiés": "28012", "embajadores-lavapies": "28012",
+        "malasaña-universidad": "28015", "malasana-universidad": "28015",
+        "universidad-malasaña": "28015", "universidad-malasana": "28015",
+        "huertas-cortes": "28014", "cortes-huertas": "28014",
+        "chueca-justicia": "28004", "justicia-chueca": "28004",
+        "nuevos ministerios-ríos rosas": "28003",
+        "nuevos ministerios-rios rosas": "28003",
+        "cuzco-castillejos": "28020",
+        "bernabéu-hispanoamérica": "28016", "bernabeu-hispanoamerica": "28016",
+        "ventilla-almenara": "28029",
+        "ensanche de vallecas - la gavia": "28051",
+        "ensanche de vallecas-valdecarros": "28051",
+        "valdebebas - valdefuentes": "28050", "valdebebas-valdefuentes": "28050",
+        "valdebernardo - valderrivas": "28032",
+        "campo de las naciones-corralejos": "28042",
+        "conde orgaz-piovera": "28016",
+        "virgen del cortijo - manoteras": "28043",
+        "virgen del cortijo-manoteras": "28043",
+        "parque lisboa - la paz": "28034",
+        "tres olivos - valverde": "28034",
+        "mirasierra-arroyo del fresno": "28034",
+        "12 de octubre-orcasur": "28041",
+        "manuela malasaña": "28015",
+        "centro - ayuntamiento": "28013",
+        "centro sur - casco antiguo": "28013",
+        "pau de carabanchel": "28025",
+        "las tablas": "28050", "sanchinarro": "28050",
+        "montecarmelo": "28035", "arroyo del fresno": "28035",
+        "peña grande": "28035", "pena grande": "28035",
+        "jerónimos": "28014", "jeronimos": "28014",
+        "concepción": "28017", "concepcion": "28017",
+        "cármenes": "28044", "carmenes": "28044",
+        "buena vista": "28047", "buenavista": "28047",
+        "palos de moguer": "28045", "palos de la frontera": "28045",
+        "río rosas": "28003", "rio rosas": "28003",
+        "las águilas": "28044", "las aguilas": "28044",
+        "los ángeles": "28041", "los angeles": "28041",
+        "la chopera": "28045", "las acacias": "28005",
+        "casco histórico": "28013", "casco historico": "28013",
+        "casco antiguo": "28013", "salvador": "28022",
+        "san andrés": "28021", "san andres": "28021",
+        "ambroz": "28032", "los cerros": "28032",
+        "los ahijones": "28032", "los berrocales": "28032",
+        "valdemarín": "28023", "valdemarin": "28023",
+        "sector 3": "28025", "la alhóndiga": "28019",
+        "la alhondiga": "28019", "el bercial": "28025",
+    }
+
+    district_fallback = {
+        "Centro": "28013", "Arganzuela": "28045", "Retiro": "28007",
+        "Salamanca": "28001", "Chamartín": "28016", "Tetuán": "28020",
+        "Chamberí": "28003", "Fuencarral-El Pardo": "28034",
+        "Moncloa-Aravaca": "28008", "Latina": "28044",
+        "Carabanchel": "28019", "Usera": "28026",
+        "Puente de Vallecas": "28018", "Moratalaz": "28030",
+        "Ciudad Lineal": "28017", "Hortaleza": "28043",
+        "Villaverde": "28021", "Villa de Vallecas": "28031",
+        "Vicálvaro": "28032", "San Blas-Canillejas": "28022",
+        "Barajas": "28042",
+    }
+
+    deals = db.query(models.Deal).filter(
+        models.Deal.postal_code.is_(None),
+        models.Deal.zone.isnot(None),
+    ).all()
+
+    phase1 = phase2 = phase3 = 0
+
+    for deal in deals:
+        z = deal.zone.strip().lower()
+        z_na = strip_accents(z)
+        postal = None
+
+        # Phase 1: exact match
+        if z in lookup:
+            postal = lookup[z]
+            phase1 += 1
+        elif z_na in lookup:
+            postal = lookup[z_na]
+            phase1 += 1
+
+        # Phase 2: manual overrides + prefix strip + compound split
+        if not postal:
+            if z in manual or z_na in manual:
+                postal = manual.get(z) or manual.get(z_na)
+            else:
+                for prefix in ("la ", "las ", "los ", "el "):
+                    s = z.removeprefix(prefix)
+                    if s in lookup:
+                        postal = lookup[s]
+                        break
+                    s_na = strip_accents(s)
+                    if s_na in lookup:
+                        postal = lookup[s_na]
+                        break
+            if not postal:
+                parts = re.split(r'\s*[-–]\s*', z)
+                for part in parts:
+                    part = part.strip()
+                    if part in lookup:
+                        postal = lookup[part]
+                        break
+                    part_na = strip_accents(part)
+                    if part_na in lookup:
+                        postal = lookup[part_na]
+                        break
+                    for prefix in ("la ", "las ", "los ", "el "):
+                        s = part.removeprefix(prefix)
+                        if s in lookup:
+                            postal = lookup[s]
+                            break
+                    if postal:
+                        break
+            if postal:
+                phase2 += 1
+
+        # Phase 3: district fallback
+        if not postal and deal.district and deal.district in district_fallback:
+            postal = district_fallback[deal.district]
+            phase3 += 1
+
+        if postal:
+            deal.postal_code = postal
+
+    db.commit()
+
+    total_updated = phase1 + phase2 + phase3
+    total_deals = db.query(models.Deal).count()
+    with_postal = db.query(models.Deal).filter(models.Deal.postal_code.isnot(None)).count()
+
+    return {
+        "phase1_exact": phase1,
+        "phase2_partial": phase2,
+        "phase3_district": phase3,
+        "total_updated": total_updated,
+        "coverage": f"{with_postal}/{total_deals} ({100*with_postal/total_deals:.1f}%)",
+    }

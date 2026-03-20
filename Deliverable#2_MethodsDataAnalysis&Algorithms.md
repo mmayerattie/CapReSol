@@ -1,148 +1,1197 @@
-# Real Estate Automation
+# CapReSol: Automated Real Estate Investment Analysis for Madrid
 
-## Deliverable 2 – Methods, Data Analysis and Algorithms. 
+## Data Collection, Machine Learning Valuation, and Financial Modeling
 
-[**Methodology Framework	1**](#methodology-framework)
+## [Author Name]
 
-[**System Architecture & Tech Stack	2**](#system-architecture-&-tech-stack)
+## [Institution Name]
 
-[Backend	2](#backend)
+# Author Note
 
-[Database	2](#database)
+[First paragraph: Complete departmental and institutional affiliation]
 
-[Data collection	3](#data-collection)
+[Second paragraph: Acknowledgments and special circumstances]
 
-[Data Processing and Machine Learning	4](#data-processing-and-machine-learning)
+[Third paragraph: Contact information, mailing address and e-mail]
 
-[**Pipeline	4**](#pipeline)
+# Abstract
 
-[**Analysis & Algorithms	6**](#analysis-&-algorithms)
+This thesis presents CapReSol, a software system built to address the fragmentation of real estate investment workflows in Madrid. Property data sits scattered across five portals, each with different formats, access methods, and coverage. Investment professionals spend hours manually collecting listings, estimating values through intuition, and running financial projections in disconnected spreadsheets. CapReSol consolidates these steps into a single platform. It scrapes property listings from Idealista, Redpiso, Fotocasa, and Pisos.com through APIs and web scraping, normalizes the data into a unified PostgreSQL schema, and applies a Gradient Boosting regression model to predict market prices. The system integrates official notary closing price data from the Colegio General del Notariado, covering 55 Madrid postal codes across nine filter combinations, to benchmark asking prices against real transaction values. A Fix and Flip financial model computes IRR, MOIC, ROE, and gross margin from monthly equity cash flows with leverage support. An analytics dashboard surfaces investment opportunities by comparing asking prices against closing prices, ML predictions against listings, and renovation candidates against finished properties across Madrid's 21 districts. Trained on 3,190 listings, the Gradient Boosting model achieves an R-squared of 0.87 on held-out data and 0.89 on five-fold cross-validation. The system is deployed as a production web application on Railway and Vercel with JWT-based multi-user authentication.
 
-[Search Optimization	6](#search-optimization)
+*Keywords:* real estate, machine learning, property valuation, web scraping, investment analysis, Madrid, gradient boosting, fix and flip, automated valuation model
 
-[Valuation Model (Machine Learning).	6](#valuation-model-\(machine-learning\).)
+#
 
-[Financial Models. (At present, excel based).	6](#financial-models.-\(at-present,-excel-based\).)
+#
 
-[Flip	6](#flip)
+# CapReSol: Automated Real Estate Investment Analysis for Madrid
 
-[CapRate	7](#caprate)
+## Background and context
 
-# Methodology Framework {#methodology-framework}
+In 2024, real estate investment in Spain reached approximately 14 billion euros, with Madrid accounting for 31 percent of the total volume (CBRE, 2024). Investment funds and private investors, including family offices, comprised nearly a third of total investment activity. Residential assets alone amounted to 4.3 billion euros, making Madrid one of Europe's most active residential investment markets.
 
-The objective of this thesis is to build a system that converts raw real estate deal flow into structured data that can be valued and analyzed for investment decisions.
+At the same time, the number of new housing units created per household has been declining since 2018, reaching its lowest level since 2014 in 2023 (BBVA Research, 2024). Fewer new units mean fewer opportunities, which makes it essential for investors to identify and act on deals quickly. In a scarce environment, the difference between securing a profitable acquisition and missing it often comes down to speed and analytical depth.
 
-The system collects data, structures it, stores it in a relational database, predicts market value using supervised machine learning, and evaluates investment performance using financial models.
+Yet the tools available to most investment professionals do not match the pace of the market. Property listings sit on five or more portals, each with its own data format, access method, and coverage area. Idealista publishes structured data through an API but caps requests at 100 per month. Fotocasa and Pisos.com render listings through JavaScript, making automated access more complex. Redpiso exposes a public JSON endpoint but with limited property detail. An analyst searching for renovation opportunities across all of Madrid must visit each portal separately, compare listings manually, and maintain spreadsheets to track what has already been reviewed.
 
-Machine learning is used to estimate property prices based on historical data. Financial modeling is then used to calculate metrics such as IRR and Yield on Cost for flip and rental strategies. Model accuracy is measured using standard regression metrics such as MAE and RMSE.
+This fragmentation is not unique to Spain. According to the 2025 European PropTech report, 62 percent of real estate professionals find it difficult to identify the right technology tool, citing a fragmented market with many options that rarely cover the full workflow (Maps PropTech API, 2025). When asked which processes need the most help, 47 percent of respondents chose automation, doubling from the previous year. Repetition remains a major burden. Most agencies operate with three to five separate solutions, and 20 percent report that the tools they use do not match their needs.
 
-The purpose is to create a system that supports investment decisions using data rather than intuition.
+The real estate technology sector has grown substantially in Europe, which now hosts 50 percent of PropTech companies worldwide, with a particular focus on the residential sector in countries with high demand and elevated prices per square meter, such as Spain (European PropTech Report, 2025). Within this sector, 60 percent of companies operate in B2B or B2B2C models, and the most commonly adopted technologies are valuation and reporting tools at 64 percent, automation tools at 28 percent, and platforms at 24 percent (Maps PropTech API, 2025).
 
-# System Architecture & Tech Stack {#system-architecture-&-tech-stack}
+However, adoption does not mean satisfaction. A small minority of professionals consider PropTech solutions affordable, and cost remains the primary barrier to adoption at 60 percent, followed by lack of information at 45 percent. Despite this, 80 percent of respondents said technology improved their processes, and 41 percent consider spending between 150 and 400 euros per month on technology acceptable. The issue is not willingness to pay but perceived value. Tools that are simple, integrated, and demonstrably useful justify higher investment.
 
-## Backend {#backend}
+This thesis responds to that gap. CapReSol consolidates the fragmented real estate investment workflow into a single platform, covering data collection, valuation, and financial analysis.
 
-The backend is divided into two services: Node.js and FastAPI.
+## Problem statement
 
-**Node.js** is the main application layer. It is used because it handles asynchronous operations efficiently and works well as a central coordination layer.  
-It receives requests from the frontend, manages authentication and routing, and acts as the API gateway. When a model is requested, it sends structured property data to the FastAPI service and returns the results to the client.
+Real estate investment professionals in Madrid face three compounding inefficiencies that this thesis aims to address:
 
-**FastAPI** is used for the machine learning service because it runs in Python, which is the language used for the data science stack. It loads the trained valuation model, receives property features and generates price predictions. The trained model is saved using joblib and loaded by the service when needed. FastAPI exposes endpoints that Node.js calls through HTTP requests.
+**Data fragmentation.** Property listings are distributed across five or more portals with no unified view. Each portal uses different data schemas, access methods, and coverage. An analyst tracking renovation opportunities must manually browse each site, cross-reference listings by address, and maintain external records to avoid duplication. There is no standard way to aggregate these sources into a single, filterable dataset.
 
-Finally Uvicorn runs the FastAPI service. It is the server that handles incoming HTTP requests and allows the ML service to respond efficiently and concurrently.
+**Valuation opacity.** Without a systematic method for estimating market value, professionals rely on intuition and manual comparison of similar properties. Automated Valuation Models do exist in the industry, but they are typically proprietary, expensive, and designed for institutional lenders rather than investment analysts. No widely accessible tool combines property features with market data to estimate fair value for the kind of deal-by-deal analysis that funds and individual investors require.
 
-## Database {#database}
+**Analytical gap.** Even when data is collected and a valuation is formed, no system bridges the full pipeline from deal sourcing through financial analysis. Investment decisions require not only knowing a property's estimated value but also computing metrics such as IRR, MOIC, and ROE under specific renovation and financing assumptions. Today, this analysis happens in disconnected Excel spreadsheets, separate from the deal data and predictions. Similarly, there is no integrated way to compare asking prices against official notary closing prices to assess negotiation margins or to surface which districts offer the best risk-adjusted opportunities.
 
-**PostgreSQL** is selected as the primary database system due to its robustness, reliability, and suitability for structured real estate data. The project requires storing relational information such as deal information, its sources and the predictions that will be performed with the valuation model. Which naturally fits a relational schema with strong ACID compliance. PostgreSQL ensures data integrity through constraints, indexing, and transactional consistency.
+These three problems feed into each other. Fragmented data makes it harder to build a reliable valuation model. Without systematic valuation, financial projections are anchored to guesswork. And without a single platform, every step of the analysis requires switching between tools, which slows things down and increases the chance of mistakes.
 
-Additionally, its compatibility with Python through psycopg2 and SQLAlchemy enables seamless integration with the machine learning pipeline. Furthermore, PostgreSQL can be extended with spatial capabilities (PostGIS), which is particularly relevant for geolocation-based real estate analysis.
+## Objectives
 
-Overall, provides scalability, analytical flexibility, and production-level reliability appropriate for a data-driven real estate investment platform.
+The primary objective of this thesis is to design, implement, and deploy an end-to-end system that automates the real estate investment analysis pipeline for Madrid's residential market.
 
-**Preliminary Tables:**
+This primary objective is supported by six specific goals:
 
-![][image1]
+1. Automate the collection of property listings from five heterogeneous sources into a unified, structured PostgreSQL database.
+2. Build and evaluate a supervised machine learning model that predicts property market value from physical and locational features.
+3. Integrate official notary closing price data from the Colegio General del Notariado to benchmark asking prices against real transaction values.
+4. Implement a Fix and Flip financial model that computes IRR, MOIC, ROE, and gross margin from monthly equity cash flows with leverage and tax support.
+5. Deliver an analytics dashboard that identifies district-level investment opportunities by comparing asking prices, closing prices, ML predictions, and renovation potential.
+6. Deploy the system as a secure, multi-user web application with production-grade infrastructure.
 
-**SQLAlchemy** is used to interact with PostgreSQL using Python instead of writing raw SQL. Database tables are defined as Python classes. SQLAlchemy translates Python operations into SQL queries. This keeps the data layer consistent and easier to maintain.
+## Scope and delimitations
 
-**Alembic** manages changes to the database structure over time. When the schema changes, migration scripts are generated so the database can be updated in a controlled way without losing data.
+The system targets Madrid's residential real estate market exclusively. Geographic coverage spans the city's 21 administrative districts and 55 postal codes (28001 through 28055). Data collection draws from five specific portals: Idealista (both API and HTML scraping), Redpiso, Fotocasa, and Pisos.com. Notary data comes from the Colegio General del Notariado through its public ArcGIS API.
 
-## Data collection {#data-collection}
+The machine learning component is limited to supervised regression for price prediction. It does not include time-series forecasting, image-based analysis, or rental yield estimation. The financial modeling implements Fix and Flip analysis only; a Cap Rate model for rental investment strategy was planned but not implemented within the scope of this thesis. The system supports six authenticated users, reflecting the scale of a small fund team rather than a public-facing platform.
 
-Collection of the data will happen at different levels. We will collect incoming deals from various sources such as whatsapp, gmail, or property portals.   
-For **incoming deals from messaging platforms** (whatsapp / gmail) we will first store the data in our ‘Messages’ table (specific variables can be seen in the image below). Which will then be transformed into deals and stored in their respective table.  
-For **deals directly scraped from a property portal**, either using its API or web scraping, the data will be stored in our ‘Deals’ table (specific variables stored can be seen in the image below).
+## Significance of the study
 
-## Data Processing and Machine Learning {#data-processing-and-machine-learning}
+This work contributes in three ways. It delivers a working system, not a proof of concept, that runs in production with over 3,000 listings and serves authenticated users. It demonstrates a complete pipeline from raw portal HTML to investment decision metrics, something most academic work and commercial products only address in pieces. And it responds to a real market need, validated through feedback from five real estate professionals in Argentina and Spain, reported in the Results chapter.
 
-Data processing is done in Python using **pandas and numpy** for cleaning, transformation, and numerical operations.   
-**Scikit-learn** is used to train machine learning models that predict property prices based on its characteristics. After training, the model is serialized using **joblib** and deployed inside the **FastAPI** service. When new property features are sent to the service, it generates a predicted value in real time.
+## Thesis organization
 
-# Pipeline {#pipeline}
+The remainder of this thesis is organized as follows. Chapter 2 reviews the literature on PropTech, machine learning for property valuation, financial modeling, and decision support systems. Chapter 3 describes the research methodology, technology selection, and development process. Chapter 4 presents the system architecture, database schema, authentication, and deployment infrastructure. Chapter 5 details the data collection pipeline, including the five scrapers, normalization logic, and notary data integration. Chapter 6 covers the machine learning valuation model, from feature engineering through training, evaluation, and deployment. Chapter 7 explains the Fix and Flip financial model. Chapter 8 describes the analytics dashboard and opportunity scoring algorithm. Chapter 9 reports the results and includes discussion of findings, professional feedback, and limitations. Chapter 10 offers conclusions and directions for future work.
 
-The system follows a structured flow.
+# Literature Review
 
-1. First, data enters through APIs, scraping, or messaging platforms.  
-2. If coming from messages it goes to the respective table, and if it is directly a deal coming from a portal or API it goes to the ‘Deals’ table.  
-3. Both are parsed and transformed into structured variables such as price, size, location, and condition among others and deals are stored in PostgreSQL.  
-4. When a valuation is requested, Node.js sends property features to FastAPI. FastAPI loads the trained model and returns a predicted price.  
-5. Regarding the Flip and Cap Rate models. They require the user to plug information manually as inputs for the model to generate outputs. 
+## PropTech and real estate technology
 
-In simple terms, the system collects property data, structures it, stores it, predicts its value, and evaluates whether it is a good investment.  
-**Flow Diagram**![][image2]
+PropTech, a term combining property and technology, refers to the application of digital tools across the real estate lifecycle, from search and acquisition through management and disposition. The category spans a wide range of solutions including marketplaces, valuation tools, property management platforms, and investment analysis software.
 
-# Analysis & Algorithms {#analysis-&-algorithms}
+In Europe, PropTech has grown to represent roughly half of all companies in the sector worldwide, with particular concentration in countries with high housing demand and elevated prices per square meter (European PropTech Report, 2025). Spain is among the most active markets in Southern Europe. Spanish real estate companies are increasingly using advanced technologies, including artificial intelligence, smart data tools, and digital marketplaces, to identify opportunities and improve operations across design, development, and brokerage (PwC, 2025).
 
-## Search Optimization {#search-optimization}
+The distribution of business models within PropTech leans heavily toward enterprise clients: 60 percent of companies operate in B2B or B2B2C models, while 40 percent target consumers directly. Among B2B solutions specifically, 28 companies focus on valuation and 135 on internal operations, representing 33 percent of the sector (Maps PropTech API, 2025).
 
-Collected data is already extracted and structured. Ready for quantitative analysis, contact the owner to streamline the acquisition process and presentation level.
+Despite the growth, the industry appears to be entering a consolidation phase. Adoption has already happened for most firms; the focus is now on making existing tools work better, optimizing usage, and embedding technology into daily operations rather than adding more point solutions (Maps PropTech API, 2025).
 
-## Valuation Model (Machine Learning).  {#valuation-model-(machine-learning).}
+## Automated data collection in real estate
 
-Predict the price given the characteristics of the asset.  
-Target variable:
+Collecting property data from multiple online sources involves two main technical approaches: structured API access and web scraping.
 
-* Price
+Structured APIs, such as the one provided by Idealista, return property data in standardized JSON format with defined fields, pagination, and authentication. Their advantage is data quality and reliability; their limitation is typically rate limits and cost. Idealista's API, for instance, enforces a cap of 100 requests per month and limits pagination to 50 results per page.
 
-Models to be tested:
+Web scraping extracts data from rendered HTML pages. Modern property portals often use JavaScript frameworks to render content dynamically in the browser, which means traditional HTTP-based scrapers see empty pages. Services like Firecrawl address this by rendering pages through headless browsers and returning the visible content as clean markdown or HTML. This approach unlocks portals such as Fotocasa and Pisos.com, which would otherwise resist automated data collection.
 
-* Linear regression  
-* Random Forest Regressor  
-* Gradient Boosting  
-* XGBoost
+The main challenge in multi-source data collection is schema heterogeneity. Each portal names fields differently, structures data in its own format, and has different levels of completeness. A three-bedroom apartment on Idealista has structured fields for bedrooms, bathrooms, and floor. The same listing on Fotocasa may bury those details inside a text description. Entity resolution, figuring out whether two listings from different portals are the same property, adds difficulty. The most reliable deduplication strategy for portal data is matching on listing URL, since each portal assigns unique URLs.
 
-Evaluation metrics:
+The Extract, Transform, Load pattern governs this type of pipeline. Raw data is extracted from heterogeneous sources, transformed into a canonical schema through parsing and normalization, and loaded into a relational database. For real estate specifically, normalization must handle geographic entities: barrio names must map to canonical district names, and postal codes must be extracted from free-text addresses.
 
-* MAE  
-* RMSE  
-* R2  
-* MAPE
+## Machine learning for property valuation
 
-## Financial Models. (At present, excel based). {#financial-models.-(at-present,-excel-based).}
+The use of quantitative models to estimate property value has a long academic history. Hedonic pricing models, formalized by Rosen (1974), decompose a property's price into the implicit value of its individual characteristics: location, size, number of rooms, condition, and amenities. These models traditionally use linear regression, which provides interpretability but assumes a linear relationship between features and price.
 
-### Flip {#flip}
+More recent work has applied machine learning methods that relax this linearity assumption. Decision trees partition the feature space recursively to fit non-linear patterns. Random forests aggregate many trees to reduce variance through bagging. Gradient Boosting builds trees sequentially, with each new tree correcting the errors of the ensemble so far. XGBoost and LightGBM are optimized implementations of gradient boosting that have dominated structured data competitions and applied research in recent years.
 
-Second hand apartments for sale are scrapped → Apply renovation model → Compare exit prices and evaluate if worth pursuing the opportunity.  
-**Inputs:** project time (in months), renovation cost per square meter, IBI, utilities, mortgage (if there is), commissions, VAT, potential exit price (market comparison of similar apartment pre vs post renovation).   
-**Outputs:**
+For property price prediction specifically, gradient boosting methods have shown strong performance across multiple geographies. Baldominos, Saez, and Quintana (2018) applied ensemble methods to Spanish housing data and found that gradient boosting outperformed linear regression and random forests on MAE and RMSE metrics. Kok, Kopczuk, and Timmins (2017) demonstrated the value of large-scale property data combined with machine learning for real estate valuation at scale.
 
-* IRR  
-* Return on Equity: *Equity Profit / Equity Invested*  
-* Equity Multiple: *Total Cash Returned / Equity Invested*  
-* Gross Margin: *Profit / Total Project Cost*
+A common preprocessing step for price prediction is log-transformation of the target variable. Property prices follow a right-skewed distribution: most properties cluster in a moderate price range, while a long tail extends toward expensive properties. Applying `log(1 + price)` compresses this distribution, allowing the model to learn proportional errors rather than absolute ones. At inference time, the prediction is reversed with `exp(prediction) - 1`. This transformation typically improves both training stability and evaluation metrics for tree-based models.
 
-### CapRate {#caprate}
+Feature engineering for real estate models involves three categories of variables. Numeric features such as size in square meters, number of bedrooms, bathrooms, and floor level. Binary features capturing the presence or absence of amenities like elevator, terrace, garage, and storage room. Categorical features encoding location (district, neighborhood) and property state (condition, orientation), which are typically one-hot encoded for tree-based models.
 
-Second hand apartments for sale are scrapped → Apply renovation model → Compare cap rate pre vs post renovation and evaluate if worth pursuing the opportunity.   
-**Inputs:** project time (in months), renovation cost per square meter, IBI, utilities, mortgage (if there is), commissions, VAT, potential new rent (market comparison of similar apartment pre vs post renovation).  
-**Outputs:** 
+Model evaluation uses standard regression metrics. R-squared measures the proportion of variance explained. Mean Absolute Error (MAE) gives the average prediction error in the same units as the target, making it directly interpretable for business decisions. Root Mean Squared Error (RMSE) penalizes large errors more heavily. Mean Absolute Percentage Error (MAPE) normalizes errors by the actual value, providing a scale-independent measure. Cross-validation, typically k-fold with k equal to 5 or 10, estimates how well the model generalizes to unseen data by training and testing on different partitions of the dataset.
 
-* Cap Rate (Current and post renovation)  
-* Yield on cost: *Net Operating Income (post) / Total Project Cost*  
-* Market cap rate (zone benchmark)  
-* Value creation spread: *Yield on Cost − Market Cap Rate*  
-* IRR
+## Financial modeling for real estate investment
 
-[image1]: <data:image/png;base64,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>
+The Fix and Flip strategy involves purchasing an undervalued property, typically in need of renovation, improving it, and selling at a higher price. It is one of the most common active investment strategies in residential real estate, particularly in markets where significant stock exists in conditions described as "a reformar" (needing renovation).
 
-[image2]: <data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAicAAANvCAYAAAAGLHpoAACAAElEQVR4XuzdB5wU9f3/8X/aL/nll19iS2KLLdHEFk1iYor5pRhjNInRKCpIRxEBu1Q7YANFUATU0EGa9F6k995778cdcHBcL5//fL57M7f73YM7ht272d3X08fb3Z2ZLcfOzrx3dnb2/wkAAECA/D97AAAAQHWinAAAgEChnAAAgEChnAAAgEChnAAAgEChnAAAgEChnAAAgEChnAAAgEChnAAAgEChnKBarFq1ysv69evt0Wds3759cvHFF8vmzZvtUVJUVBRxf5qNGzfak1Ur93ElGv03nzp1qj24Wmzbtk3Wrl0ru3fvlvz8fHt0oNjz/4kTJ7xxP//5z82/69nQ62uysrJk+/bt5ny9evXsyYDAopygWrgLTzeXXHKJKRF+na6cHDt2LOr+fvOb39iTRXCnqwwtOjrt/v377VGVsmnTJu/+Bg8ebI8+JZ3+5ZdftgfHjfsYw1ekV155pUyfPj1sqqqXm5sb9fxW9rkrj163Tp069uCYsh+rpl27dmbcr3/9a/Pvejbc29RysmPHDnN7jz76qD0ZEFiUE1QLXXDqQjj8cv/+/b3LkydPNgXiD3/4gyxfvtwb3qNHD/nzn/8sV111lVmBuIWgMuXk/ffft0fJ3Llz5fe//7384Ac/kMcff1wOHz4s7777bsRK47777jPTvvbaa/LDH/5QfvzjH0ubNm3MsC1btkStZFRxcbF5rLpSeOihh+TAgQPefdp0Gr3ev/71L7nsssu84Xv37jXD77zzTnP5iSee8G7fvs/GjRub4fr3/PGPf5RbbrlFPv/8c++2fvvb35rpRo0aZR5/8+bNzYrr3nvvlWuvvdY8XlVSUmKG6WPS4StXrjTD9TkIv7/LL7/cDNfz4VtO9N/lmmuukQYNGkh6ero3XKfT57tRo0bm3/Djjz/2xp2t//u//zO3X96/sT6v7r+ZevbZZ73LusVC/0Z9PLVr1zbD7H9XvW21Zs0a+fvf/262aowcOdK7PXe68ePHm7+7WbNmpiz985//NLd9Ku71yrscvuVkypQp5nxGRoZ3mzk5Od71Fi9eLHfccYd5PsKfB/f2ytty4v6bfPjhh+Z1pM9JuCZNmpjht99+uxQWFkaMA6oK5QTVQheObjnZsGGDuZyWlmYu/+Mf/zCXdaWhC1134a902A033GCiW1vchXhlysnrr79uVvgadwGvw/V2brrpJnNfY8eOle7du3sLdx2uK1qlC2y9fN1115lxq1evNu9K9bHo5RtvvNGMV+40Oiz8cZZHx2kZ0GKg50+ePGmGn66c6P24/0Z6/oUXXjDFQIdpwXELz7///W8zvVtOrr76am+crqT08en5unXrmul0ZaSPXW9TV4Q6Tle2unLW85qf/vSn8otf/MJMr5fdleIbb7xhLl9//fXetIcOHfKm01Tm3+NMPfbYY97td+3aNaIUaekIvy99jlu1amXO63Atavr3uFsq3H/XK664wpzXwjhs2DAzTP+99N9Pzz/44IPebWh+9KMfmeu4l/U29VSLdHnc6cq7XF450X8z9za1BCnd0qiX9W9yx7Vo0SLi9k5XTvR5dl9feXl5ZlytWrXMZX2edJwGqA6UE1QLd+HpRkuBPU65K2xdOCtdIDdt2tSsJMLfFVemnITHLTt63l1ZKXcLQvhjcB08eNBskXBXUPpOWtkf66xYscJcdkuFvrvVy+5th3P/vho1apjLev5nP/uZOX+6cuJOG/6xjvuYdX8L93bd6d1yosPdouFuSdIyo4XCpSVDH4P7d9pbFcI/1tHLbjnR8+6Whk6dOpnL7scj4Y/l1Vdfjfg7zlZBQYF3+260SCr33+H48ePeyvzIkSNmnJ7PzMwMvylvePjHOm6ZKm/eCD+vt6Xn9d9P3Xrrrd7jsLnX039j/ffX825BKq+c6Dyk5s+fby5rkdfXjJ7XvzH8NsPPn66cKP2b3Ntzr+fu+6RFVS/rfQJVjXKCaqELPXfLyT333GMuuys9d8GqK7rw6EJTh//kJz8xC1XdHO0uZCtTTsr7WEe3UjRs2FB+97vfRTwm9zG46tevby4vXbrUXNaVys0332zO2+Wkb9++5rJu1Qh//OXthPviiy969xUeXZm65cR99/3AAw9EPCY9X145cbnv5JVbTtTOnTvNefcjG90Kou/8la5QL730UrMfjNLp9N/GPa85XTnRjwqUfgyhl3VF645z/2179uwZ8TjDufdxqpzuoxKlK2p3y5BLtyboZf24K3y4lpq77rrLKwPujtl6PrycuPdtz4/h45TOS3peS6y67bbbTrnviHu9devWRe2rVF450a1Xyp0nZsyYYbaWlfe43MKhqaicKPcx69YTPa8fp4bfnm45Aqoa5QTVQheC9j4ndjHQhba+29WPYJ5++mkZPXq0GX733Xebd3Vn+rFO586dzYLbjdKPHfQ+whfoyj3vboXQrRd6We/XXfG65UQ/2tHLukVCb8ddSekmcb1tjb0Ccul0Wga0SGjcd9FvvvmmeWzu49D7dceFX1c/jtH71MeoBUOH6f46+tFG+N9T2XKi/6b6bl8fs3v/djnRFVn4u3W3nGgZ08t6Xd3youfdrQh6vjLlxA/dp0f3A9F/I40+fvv23ceuH2W49Js9+m/nbiEYOHCgN+3f/vY379/VLQv676rDdJ547rnnIm5X+Skn5SmvnHTs2NHct74O3HH67SQ9r/sD6TgtF7pVUbm3fyblxD1///33e/Pt8OHDI8ooUFUoJ6gWuhC0y4lGF4TulojwaCEJ/6hCozuqugvZypST8Lj7htjD3R1ddV8Ed9jMmTNNuQifTj/3d8uJ/bhU+/bto27b5t5m+I6r7jtjjd6uuyLR6LvY8NtxtzhpdGdi+zFqJkyYYKatbDnRfz/7NtxyovveuMPCV85uOdmzZ0/E9bRshX8UEs9yYj9mewuLO7y8nVndaOlU7hYJje4cqlux7GndfTHcyyqe5US38LjX0Y/3XPbj0vk2fPiZlpNp06ZF3SblBNWBcgIgqekWBd0ipFuoEo1bToBUQzkBkNTcLQCLFi2yRwUe5QSpinICIKnpt6dOtc9P0Ok3gPTxA6mGcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFcgIAAAKFchIDOfklJElTUmI/22fGvj2SJCk4uxmjsKic2yRJE5w9yolP707JkoufP0RSIJe8cEgWbsu3Z4FT6jr9ZNRtkOTMZS0OyaxNlZ83us9g3kiV6LwxbX2ePQugkignPhQ7xdieEUny52BmkT0rRNEtLfb1SPKnMmZszIu6Hkn+wB/KiQ+jV+RGzYAk+fPXzhn2rBBl+LKcqOuR5E9xsT0nRLuknOuR5M+BSrypQTTKiQ8vjjwRNQOS5M+lL1T8LuitCXzcl4rZeKDAnhWi2NchqZHZmyv/sR/KUE58aPX58agZkKRGKtJhPOUkFbN2H+WElJ+Zm9jvxA/KiQ+Uk9RNRSgnqRnKCTlVKCf+UE58oJykbipCOUnNUE7IqUI58Ydy4gPlJHVTEcpJaoZyQk4Vyok/lBMfKCepm4pQTlIzlBNyqlBO/KGc+EA5Sd1UhHKSmqGckFOFcuIP5cQHyknqpiKUk9QM5YScKpQTfygnPlBOUjcVoZykZign5FShnPhDOfGBcpK6qQjlJDo3v3Y4aliyhXJy9vl5u8PygxbRwxM9lBN/KCc+JHs5+fdHR83f+es30ksvH/H+9sKi0EK246Qsc9m+brKnIolcTv75wREpLA79dlR6VnHUeL9Zt78galiyJdnKyadzss1jvrJV6PLC7aGjnNrTxTKHTxTJLe1Dy5xkCuXEH8qJD8leTjYeLJS9R4tk9d7QSkXLybr9heb8yj0FUuc/RyPKyYsjj8uCbfnSsM+xqNtKtlQkkcuJGrIk2xym/48dQyuJO9/PkFnOwrX/gmz5YZs0WbqzQH77Zrq8OSFLan96VMatypVPnBWZ+7sxOv6eD49Iz1nZ3u1OXhv6wTsd92jfY2ZhfXXbNDNMX0vjV+eaca+OSdyfhUjWctJhfOg5Cf8btLDM3ZIvzw0NLQdvfPWwTFqb6zzPuXJZy0Nm68eQJTkydGmO/KJdaKvZmJW5MmdznlmWuPehv9jrzlN6WU91K1v93sfkwZ5H5PNlOdJ1Wuj1pL8MPtG5/T91SvemT5RQTvyhnPiQzOVEFwLqlvaHzelNzsJCFyiFRSVyPCf062bXvZzmlZN7u4W2qlzeMvq2kjEVSeRyos+z/qqyysotMcPyCkOnmmucQqH++UGGufzjF9Nk+a58ySsIXUmHKV3h5OSXmB8802HuqdL5a+TyXClw5qeJa3IjrtdrblmhSbQkazlR+sbktbEnzHl3uXB5yzRTRnYfKZLi4hJpP+6EXFb6kYwWlx3phREf0SzYni9px0M/gOcuY54enCmtnWWp0mnUrR3SpcWw4/LFhlChDR/3vlNUXi99HPbjDXIoJ/5QTnxI5nKiKxu1Iz20IPnwi5NmpbUlrVB+91a6/Oz10Duh8C0nOl7fXYevyJI1FUnkcuJG37mqK1unyaHjZR/vuOXkp847Zd1SokVG390u2VG2yd89PZFbVljCy4meDlyYY87P25ovuQWheUZRToITt5y4P1qnw9RdXUK/zJ2RVWSy0ykhP3FKas9ZJ+VkXrE85RQOLSlumVmyM99sLVuxu8AsP9QVrULz0R3vZchtpcPc23fLSZMBoa2w4eOe+ixT7i/9iNl+vEEO5cQfyokPyVxOiopFes/Llkc+OWo+qtEVUPjHOm7ccvKnThmyyFk5jVhW9i44mVORRC4n+txrYdh0sNDsd+L+CvMcZwU1a3NeRDlxp9ePALVgKB2mlu8qEB3SZkTodXKqclKjR2jfJt28rygnwYlbTnQr2J2dQ1vKVKiUlsiE1bkyY2OeLHZe+9sOF5qP95Y5z3unyVny2aJs85weyy6WfUeLzL5MOg8sCttvJd95I6Nb53ILQltj3dt3y8nj/SPLiW6J0cKbmV02faKEcuIP5cSHZC4n5PSpSCKXk1hE2cNOl1+/Gdq3RdXoUbY/QqIl2cpJvNNhXGhfll1O6ajMv41uNdHTpTv1DVNibaGlnPhDOfGBcpK6qQjlpOIVTXh0ZaPvouv1SuydqSknZ5bmgzLNx0K69eVHbUI7R58uj/U7JodPFMvszXly7UsVTx+kUE78oZz4QDlJ3VQk1ctJqoZyQk4Vyok/lBMfKCepm4pQTlIzlBNyqlBO/KGc+EA5Sd1UhHKSmqGckFOFcuIP5cQHyknqpiKUk9QM5YScKpQTfygnPlBOUjcVoZykZign5FShnPhDOfGBcpK6qQjlJDVDOSGnCuXEH8qJD5ST1E1FKCepGcoJOVUoJ/5QTnygnKRuKkI5Sc1QTsipQjnxh3LiA+UkdVMRyklqhnJCThXKiT+UEx8oJ6mbilBOUjOUE3KqUE78oZz4QDlJ3VSEcpKaoZyQU4Vy4g/lxAfKSeqmIpST1AzlhJwqlBN/KCc+pFo5+WxRTtSwM82QxdG3oT+lfukL0dMGORVJ5nLSdfrJqGEklEQuJ/3nZ5vTHjNPyh3vZchNr6XJvd2OSO+5oeHlRX+wzx5mbmtBtvz01cNRw0+XRdvzvfO/6pAu41blyqBF2XJlq8r9wN8v24fub8iS6GVMEEI58Ydy4kMilJPBThnQx7l4R75c82KaDFuaIze/dljmbM4zCx4tBW1HHpcu07Jk44ECc52hzjQPfXxUnhmcaaZ9vH+m/P7tdBnrLCyuaZsmr4wO/cz5/d3Lftp+9d4CqfufYzJqRa5c7Uwz1FlAPND9qLn9XnNPSpsRx6VRn2Nyn3Ofv+pw2Pz6bB1n+gd7HJGF20ILpbErc51hoevYf0fQUpFELSftxoaeW30+r26TZuYBfe7v++iIrN4Tmj8+nXNSavQ4Ku1Lf+5eM3BhtpmfdH55dkim3OMUzod6HpU1zu3ofHJ5y1AJ/WJDaGWm85/e5vT1eeY5f25opvd60vt50Ll9+7ElQhK5nHSanCWXtThknsdanxyV2ZtCz5U+HzWd5cETAzLN5X99eERGrwgVgM5TsuRPnTKcEpFjXtu/eytdfuDchv7CcL8FoVKzcneB3OtcZ8uhQrn93QxTHh7sGfn8Pj/0uJlH9HxdZ37QZUT4+I9mnDSP6wunDDXpf0xal84ret59w6PLsBtfOWzmu/DrBiWUE38oJz4kQjlZsTu0QpmyLk8a9zsmV7ZOc4pB2YtXFwJLdoTKgb5j0oXTxDW50stZAemWkqYDQwskjfv3TnVWKH/rnBFxP12mhd5N6wro/allK+YbXkmT5btCj0Hv3x0+fnWuTHNu57G+x2RBaTnRn0H/zZvpEbcb1FQkUcuJ/oS9FoyfOEX2pVGh53vD/gIzP2ihuCRs2slrc73zH35x0pRRPf+fOWVbVur3Cj3ntzrvhHUeXLcvNC/cUvouVxfY60pvv/e80MrMLUiJmEQuJy2HHzevfT3fxCki7nPkPh/6+v3Z64fN86ilU4fd3TX0BkW3rtz/Ueh8x0mheX/ullC50SKrpzr/vDWh/NfF8GVlWzt0ftNTfZOyvvT8zNItNLo1RU91WXT9y4fNm6FVpaVZ70+XJ7oMs28/CKGc+EM58SERyom7qXSE8+KfVfpO6OVRoYWN+07FXQDoikO3jOi7Xr18SelWDz1/6xvpcmdpIdGtMVoswu/nxZGhfwt9Z6ybdPX8Da+EFm5jVoYWKHq98OvolpTrnAXM+847nitbhYa5C6agpyKJWk70HbMu8PXdr/t8bTpYaE6val22eV3Lyz+6RhbUVs7KTeeftyeW/e0/LL3O3C35ZmXjlhNdsVzRKk26OqXWfeer4//ivLP+Q8fI202kJHI50SKpWzj1/KezQ6/hW503L397P0Pu7pJh3jjoGwh9ntytaFe0Cj1vel6Xh7rFRLeqvOQsD1aVFpjb3k430+jWW/f519e9ff9u9I2Lzkd63i1BA0qXKU8PDr1Z0vlEt87q+aWlb65GLs+RnjOD+5Ej5cQfyokPQS8nv3UWJvbmUTu6cGnQ+8w2g45cXvaO2Y0WGXtYMqciiVpOqiL/KH23nYxJ5HISj9j7i+jHP/Y0uiXWHpaMoZz4QznxIejlRN/x2MPs/NB5p6P7iNjDTxXd9G7v6Kbvluzpkj0VoZycOg37lH28l2yhnETmp69GLhvu+TB5i2lFoZz4QznxIejlhMQvFaGcpGYoJ+RUoZz4QznxgXKSuqkI5SQ1QzkhpwrlxB/KiQ+Uk9RNRSgnqRnKCTlVKCf+UE58oJykbipCOUnNUE7IqUI58Ydy4oP91ViSGvnDOxn2rBCFeSM1U1BUYs8KUezrkNTIrowie1ZAJVBOfDh4vDhqBiTJnz7zs+1ZIcqeo0VR1yPJn8oIP14MSZ3AH8qJT/YMSJI/JRW/OTbs65HkT2UUFTNvpFr0gJfwh3JylvIKS2Tb4UKSpMnIKraf8krLK2DeSOaUVLatlmPv0aKo2yPJk2L/iw2UopwgbgoLC+XEiRNy/Phxk6ysrLNaoCPY9DlGctLXrf1aLmYNjDiinCDu9u3bJ02bNpUaNWqYPP7447Ju3Tp7MiQ4fW6RXMaNGycNGjTwXrtvvvmmHD161J4MiDnKCarcpEmTpE6dOt4C7/XXX5eiIvZoT3SUk8SXl5cnjRo18l6bWkw2b95sTwbEHeUE1ebgwYNSs2ZNb0FYv359OXDggD0ZEgTlJHHNnz8/4g1DixYtzMc4QHWhnKDaFRQUyNtvv+0tGB977DEZP368PRkCjnKSeLp37x5RSj777DP2C0MgUE4QOLt27YrYotKwYUN2tkwAlJPg27p1qzz00EPea0s/wtGdW4GgoZwgsPTz75YtW3oL0kcffVTmzp1rT4aAoJwEk24J6d+/v9StW9d7LfXo0YMtJAg0ygkCTxeiq1ev9hasmt69e5uvKiM4KCfBcvLkyYiPS3WLyc6dO+3JgECinCDh6D4q+nVkd6Fbr149Wb9+vT0ZqhjlpPqNHTtWateu7b023njjDb4Jh4REOUHC0oXuqlWrvAXxgw8+KIMGDbInQxWhnFSP/Px86dixY8SWRd1vC0hklBMkhS1btpjjpbgL5yeffFKOHTtmT4Y4opxUrW3btpmv37vzfM+ePSUtLc2eDEhIlBMkHd0XZcWKFRFbVHRzN+KLchJferj4Dz/8MGILye7du9mxFUmJcoKktmnTJmnVqpW3MH/22WfNt4AQe5ST+Dh06JA59o87D7///vuyf/9+ezIgqVBOkBIOHz4c8a5TDzw1evRoezKcBcpJbPXq1cs7JkmtWrXMAdJyc3PtyYCkRDlBytHN4Pp7IY0bN47YosLm8bNDOTk7eqDB8G+htWvXji0kSFmUE6S0PXv2yHvvveetEDh0vn+UE3/69OkjjzzyiDcPDhgwQDIzM+3JgJRCOQFK6Uri4YcfNisI3Yl24MCB/PjZGaCcVJ6W4s6dO3uFRLfiUYqBMpQToBx6JM327dt7K49mzZrJ9OnT7ckQhnJyevYh5HWfkoyMDHsyAEI5ASoUvmOiblkZPHgwOyaWg3ISLT093eyIrVvi9N9Hd8QeM2aMPRkAC+UEqKQDBw6YHx903/l26dKFHRbDUE7KlPcVdn4LCqg8ygngg36z5+OPP/ZWPnqkzqFDh5oDZaWqVC4nWVlZ0q1bN28LiWbUqFH2ZAAqiXICnKWtW7dG7EugpUWPq5JqUrGc6M8mhO+bxM8mALFBOQFiRI88++6773orKn0XnUo/UZ8q5US3jq1du9Z7njX69V8AsUM5AeJkzZo15sie7gpMd6zVA20lq2QuJ/obNuG//NuoUSP2NwLiiHICxJkeUOudd97xVmz6jZ8dO3bYkyW8ZCsnul/RqlWrIraQ9O7dO6X3KwKqCuUEqEL9+vWL2D9Ff+Y+WVZ2yVJO8vPzpU2bNt5zpN/Qmj17tj0ZgDiinADV5ODBgxFbVPQYGHrk0ESVyOVEP4Jzjw6s+fTTTyU7O9ueDEAVoZwA1ayoqEh69OgR8fsq+gu0iSbRyklBQUFEOdTfVRo3bpw9GYBqQDkBAmTu3LlmC4q7wmzRokXC/L5PopQT3WKlx6Vx/41159ZE3mIFJCPKCRBQuu9D165dpWbNmt6KNMgH9gpqOdF9erp37+79GzZs2NAcME93eAUQTJQTIAGMHTtWGjRo4K1g3377bTly5Ig9WbUKWjnRnxt44oknvH+zxx9/3OxbAiD4KCdAgnF/hFCjW1WC8su2QSkny5cvjziM/FNPPWVPAiDgKCdAAhs0aFDE/hP61eTqKivVVU50f5G2bdt6/wZNmzaVOXPm2JMBSCCUEyAJ6H4V4SVFP85IT0+v0v0qqrKc6N+rv2kUvhVJP7YBkBwoJ0AS0a/HTp8+3Vth68p7yZIl9mRxUVXlZPDgwd7fp9GSUpUlDED8UU6AJJabm2uOcOquyFu3bh23X0yORznRLSTbtm2L+Hp1s2bN7MkAJBnKCZAihg0bFrHFQVf6sRTrcjJ16tSIx7ty5Up7EgBJinICpBA9Gu3atWu9X0vWb7U888wz9mS+xKKcFBYWSpMmTbxCot+04dd/gdRDOQFSmO6rod/wCd9CsW/fvjPah8MtOm46depkT3JKWpZ0nxj3ulqWdJ8ZAKmNcgLAlAQ9Pkh4Sajs8UE2bdoUUU4qe7j98H1h9KitZ1qKACQvygmACLovin7U4xYHLSlaXMItXrw44nLdunXNtC1btowYPmLEiIjLo0ePjiglupVFf+sGAMJRTgCc1owZMyK2jLRp08Y7H668y5rwb9roFpldu3ZFTAcANsoJgErZuXOn1KtXL6Ko6McxrvCPZMIPH6956aWX4vYVZgDJh3ICoNK0gIR/5KPR/VXCbdmyJWK8bmkBgDNBOQFwRjIzM83B3exSYtOvBefk5Mjx48ftUQBwWpQTAAAQKJQTAAAQKJQTAAAQKJQTAAAQKJQTAAAQKJQTAGespLg44nJRxgzJXXSHFGfvLB1SeswTDkcPwAfKCYBKKSku1P95lwsPjpTcxXfKyfH/Lyp5K2pJ0bHwQ9yXOD3l9F89BgAX5QTAaTilorig9GyxFB4aI7mL/hJVRk6XvFX1pOjI3LJb1IITVnIAwEY5AeAJPwS9bunIXXK3nJz4X1GF42ySPfUCp7DU13tw78m5r0LvfgGAcgKktMh9Qkry0yV3+QNRhSJumfQ/kre2mUhxXtiDYKsKkOooJ0CqMVtHwraQ5OyW3CX/iC4OVZ0JX3aKSlMpKThW9lgBpCTKCZD0yvbxKCnOlYIdXSRnzs3R5SCAyV10uxQeGFr2pzh/h9kxF0BSo5wAycotJPkZUrC7p2TP+FHUyj+RkrPg/6Tw4AjnDwp964f9VIDkRTkBkkTEzqx5h6Rgb185OeXcqJV8MiR71rVSlD5DSgqzwv4FACQLygmQiMzWg7IyUnx8leTM+3XUSjyVkrv0X1KSe6Ds38jgIHBAIqKcAIlC97cIO5CZKSQzfxy1kia6r8pfpTh7R9g/npTuCAwgEVBOgIDzDoKmxwPJ2W2+fmuvjMmpkzP7RvMxV9m/p+6rQlEBgoxyAgRK2Ec1WZskf9PLThn5ZtQKl/hP9heXS8Guj6Qk/3DpPzlFBQgayglQzSI+qsneJnkbWzsr0S9HrVRJHDLpf6Rg96dSkncw7PmgrADVjXICVIOyj2rEHHQsd1XD6BUnqfIUbH9XSopOhj1P+d55AFWHcgJUEfODd6Uf25QUHpecJX/nI5uAJnvydyR//XPhz15EoQQQX5QTIE5CZcRRnCtFmSudld6XolaCJIHiFEnzDSDvIHBlH8cBiC3KCRAjXhkpVZS5wvxeTNRKrhrSt8035QeXXmzOf/byf3vnK8rOQV+Wtx//36jhlc2HT/+PnBgXPfxMc3D4l+Wu310QNbzaMuGrUpJ/pOzJ5scKgZiinABnwf6dl8KDn0v2lPOjV2bVnD6tvykXXxwqJINe+m/vfEVZ0v1rckklpy0vN1/7fckcEz38TBO4chKW7OmXSNHxVRHzATvVAmeHcgKckbBDxOfuSZgf0CuvnAx/7RvmdMLbXzenA1/8b3nniW/JvA++JodHfEla1/52RDk5MOzLZrom950j63p9Va656iIzzZZ+X/FuW0/fa/Yt6dc2tC9NeDm55w8XyJb+X/Gmc09vvu77srnvV+T+P58v119zoQx4saw86emcLv8lj/7r3MCWk/KSt6KmlBQcLZtX2LEWOCOUE+AM6Ec1OTOvkZMTvha1Qgpy+rUtW+H3Lz3vlhMdpqdvNv5fOTb6S+b8VVdcJC/XL7+c7Bsa+qhKy0mrR74tG/pElpPw+y2vnBwfG1lOtIy458Nz6PPQY3HvO5HKiZdJ35Tchbebb2SFlLBVBagEyglQgcK0cZIz71azn0HUyidBsvY/XzUrei0Gf7jlu/LjH15YbjmZ/2GodOkWFB22rOfXvOu55eTQ8NCOvdddc6H87uffkz/96rsRt6P7t0x65+vm8i03fN9shdHzde46T8a88XV5se63I6b//PVQObnrtgvk59d/X7LGhfaLcccv7/lVU5QSspyEZ9K3JHfRnVJ8Yr09iwGwUE6Q8uyviBbs7inJehA0LRknxobOawnQy97w0h1X9bw73L4cPjz8sj19+E6welnvq7zpw8dp9Hrhw+zHGH7fSZEJX5bCo/Mi5j92rgUoJ0hRoX0A3M3rJZK/+VXnnW3o3Toh1ZHsKedK4b6B4bNp1A7XQKqgnCBlFWXMTOiPakgSZ/J3pDjsxwqBVEM5QcrYm5Uu3+n1sD3YKCnKkbw1j0WvJAKezf1C+4Ho+btvu8Ccv+HH34+aLpFypo/f/fs1V1x2kVxyycVy603fi5ou2PmSFOzo7MyI5R+F9tzetexBQFKjnCBl/HTok3LOKcpJuJLCLMnXH98LyAHUThfd4VS/zqvn9Rs2N/z4Qql793lS4y/ny9ROX5cn/n2OGTf01W9IrTvPk/2l37Tp9sz/yKz3/0sa/ONcWdbja9Ki1nfkvebfirr92nedJ/3bfFOa3X+OU4S+IrX+dp7ZMVbHre/9FanvXF+/SuxOr+Ofe/g75rwewK3RPefK202+Zb6xs+uzL0vDf54rTZ3H5D6OlZ981ewo+8Zj/yuN/3WuGaaPXU8fcy7vHvxl8/dMf/e/zLBtA74sNZ2/4/0nv2Uemw77628uMDv56nn9ho/eT3hhCWqyJ39bCnb11GYcPveFnS+jpbrDsqH2YCBpUU6QEg5kHzUL+FrT3rVHlSNsBVFcKPmb2ppfr7VXLkGIHul1RufQiluLyZ9/9V3p3zZ0TJMrL79Iej7/P/KsUxZ0a4IWEh1+dNSX5NmHzpFf/fT7przouHebhr6dkz4y8hD7Oux9p7Rc9oOL5YHbz5cbnfu41LnP7QNCXx/uVPqtnk19vyI1/3qemVa/9aPXvfyyi6T5A+fIUw+eY0rGnK7/JZ+0+KZ3n7qDq1637t3nmq8r/+y60BYTt1jo8U/++pvvymP3nhN6bCNCXy2u//fzzOmPrrzITKffOtLb0/O6A61+4+eGa85s60tVJfuLK6VgR5eyeUx3fq3EYfCvH9JMzmPrCVII5QQp4fzej8jlAxrZgyutxN3cXlIixSe3St7KOlErnuqIrtTndg2Vk1/f9D2zFULP68rb/TrudVdfGDF8sDNcy8mkt78uKz4OfcXYHecWHTduAbjxJxea03ebhcqI3p6e6m1rXq7/v3J09Jec4nCuKQp6vJQdA7/i3M93zHTzPvgvufO3F5iCNKJd6CvMY98o+yqzHoCtvHKS5Zxu7BsqQrqlxx33yJ3neY9tovN3uOVk/Jtfl65PBadI5m9pJyW5+8LmIy0i5W8dOZ2i4mJTrm8b1coeBSQlyglSgi7Yp+5daQ8+c9Y73eLMFZK3tnnUSqmqokdU7fpU6OMYu5wMfiVUTl5t8G2z8tYju+pw/YjFlJN3/JcTPRCbnta+61xTLBZ3/5o8VeMcU0audcpKxsgvyR2//q7ZcnKpc99jOnxD7v3j+VL7b+fJL274vrmufm1YT7W06OMrr5zoqVtOtPzo6d9Kp3cfWz2nEF19Vej8o/ec612/upK/7e3QDwSGi8GB15rM7n7KfaaAZEM5QdJbenirXNyvnj347Fmb44uPr5a8NU9ErazimeGvf8N8fKPnP3j6W+bQ9Hq+/aPfNgdQc6fT0qEft6R9HvrYZrRTFvQQ9Lp/hk7rXkc/ngm//bebhD6i0UPSu7fjTq/7lGhZGeXcln6csn3gV8z+JZ+8ENpyseDDr0nn5s749t8wl/X4Kvrx0Y6BZfepR4zV+9DC8cfS/UbccXpdPdX9U9xhewZ/Wd5w/g4tNHogOR2mZUS30uj5oa/+tzdtVUa/il7ifbum7CvqsXQiP8eUk+POKZDsKCdIarlF+aUL9Gx7VJyErZCc8lKwp7ecDOAPAQYlje89R65yytVrDb8dcTC2U+WJ+0LTt6kT2um2OpI9+wYpPDy17GnWrSJVdOC0qXtWOkW7vj0YSDqUEyS1Vgv7Vt+mcPMRUNlKq2DnR5Ktv8tTzgqPBDs5C/8ghQeGhT21hVVWSMJp9dX5efaBdfYoIKlQTpC0ikpCOxFeP6S5ParKldhFZft7kjPnpqiVIAlKvuQUkj9J4f4hYU+iPn+x/ajGD/3WzjWfNbEHA0mFcoKkdfOwp+Wc3jXtwcFgdpAsW9EV5+w2B+GKXkmSKsmEr0jhvkFSUpBZ+vxU/VaRytp1Is2U7iazP7JHAUmDcoKkpQvwZ+f/xx4cWGbfBT0tOCr5W9pHr0BJbDPpW1Kw+1OnGeaV/vsXBbqUhLth6JMc9wRJjXKCpLT/5JHq29fkLIV/BKTn87e8Kicnfj165UrOONlTL5DCvb3D/7Wdf+PE+3G9DUf3Juz8DVQG5QRJSRfcs/avtQcnJqeghP86beHBEZK76C9RK14SHT1YXtGR2WX/lAmyZaQyWizoI38Y09YeDCQFygmSzvBt85L7XWXYAb0KD45yisodCfE7QFWSid+Q3OUPSvGxJWH/YMkpr6jAzOdZBbn2KCDhUU6QdM7pVVMu6d/AHpz0ijJmSc68X6XcR0DZk78jOYvvlOKcvaX/EtX/jZqqouXk96Na24OBhEc5QVKp90UXs8AuKK74x9SSkn4E5H50UVIohXv7ysnJVX/E1Hgm+4srpOjwpMi/Oexjr1QyYddSM7/P4bgnSDKUEyQVXVD/bfxr9uCUZP/InH5VNntaMH+tt6Jkz7xaio7MK/vjxP37cG7vmvK9vnXswUBCo5wgaRQ47561nBzLP2mPgrUiL0qfJtlTQj8SGMx8ySlSF0px9vawR506H9eciYm7lyX3PlZISZQTJI0fDmosXdeMtQejEoqOr5K8FbXk5KRvllMU4p/s6ZdI/vpny/nxPFTGTwY/IY1ncVA2JA/KCZLCpmP7ePd41koPApd3UHKX3iPZU86NKhGxjBaSvHVPS0lxftn9J9FXfavSyYJc5n8kFcoJksKvRjxvvqWDsxdxUDKnOOSueCh23wCa9E3J3/J62e2L9pGCiMvwR8vJc/N72YOBhEQ5QcLrsnqMWTCvTA/fPwGxYh+4TI8hkj3rJ9HFIypfMl9tLslLi7g+H9nExxvLh5nXQXZh6HD8QCKjnCDh6W+MXDagkT0YcVNWLkpy90n2tItNETGFZMJXJXvGVRE74PKtmqrh/gr3RX3r2aOAhEM5QcLTBfLUPSvtwagK3laVEvMRkDe4iHfv1aHZnJ7se4KkQDlBQntk+ntSc9q79mAgZelxTwZvnWMPBhIK5QQJy92MzXFNgDJrj+ySi/rVswcDCYVygoT12KxubMIGyhHaQXyHPRhIGJQTJKSNR/eaBXDn1aPtUUDK+83IFub1kZ+ivzmExEc5QUK6bkgztpoAp3Aw+6h5fTSd08MeBSQEygkSki54O60caQ8GUOrS/g0o8EhYlBMknPdXj5GL+tW1BwMIU1JSYo6anFWQa48CAo9ygoSjX5VcnbHTHgzA8sy8T+XaIU3twUDgUU6QUD5aO4FN1cAZ0NdLYTFH6UVioZwgoeiCtsGMrvZgAKegrxkKPRIN5QQJ4/axL5mFbE5h2WHSAZzemoyd5nUzfe8qe5Qv+svHjWd1swefsXsnv2EPijBx9zI5np9tD0aKoJwgbvQIrvqV3/0nj0jj2R/Zo8+YLmD/PflNezCA0xi+bZ6c47x2dOfYywY0tEefkdyiAvlgzbhK72SrHyc1n9PTHmzcP/kte1CEB6e+Yw9CCqGcIK4yco/L8sPbzFaP4pIS846roLhQOq8eY096WrP2r2XTNODDJf3rS2b+SfP6mbZ3pYzZuUi2ZO6XOfvXm+OhVEbP9ZPM6fMLekmJ89+gLbNkcdpm+WT9ZDmck2kKi9Jv0tWY8o4pJfp633syQ/KcQuM6lHPMnOrRa9cf3S1Pz/3EXNajPbv0W0bq58Of8YYh9VBOEFfuO6xrPmviLBhXmaiVGTvkr+NeCZ/0tK7+7HEZum2uPRhABa4f0syc6rfc7pnYwbwWVa+NU+VEfo45v/nYPu/1GR6XWxTcrRlbMw/Ih6WFpNvaCd70e7PS5ZefP+dd78O1452S4v5ytch9k0JbPj/dMEWO5mVF3NfPhj8tq5zlwufb55tpXlkyyLseUg/lBHE1escic/qTwU/I2F1LpPfG6c5CbbyM37VU/jmxvTV1+TY5C0591xe+kANQOS8s6G1Obx72tPlo58XF/WXglpln9LFJw5kfmELxo0GNvWF/G/+aOV14aJO0WNBHRu1YaC7fOPRJGee81nXryeOzP5Kpe1d61xmweaZZJpzf+xFz+dGZH8rYnYvlsy2z5Xt9a5vzNzslRS04tNG7HlIP5QSBd27vWnLTsNACC4B/WvK/35cDGCL4KCcItLdWDDcLVA66Bpy9d1eNMq8n/VgGCDLKCQLt/D6PyA/O8hsGAEL0G3S678kNQ5vbo4BAoZwgsLIKcjiuCRBje7LS+eYbAo9ygsD6x4R2UmPK2/ZgAGdJd2x1d2AFgohygkDSzc9sNQHiY/b+deb1pccsAYKIcoJA0v1M9KiWAOJDy0llv84PVDXKCQJn+/GDZsE5eOscexSAGNGDpenrrLKHogeqEuUEgXNe71rssAdUAX2dNZ/7sT0YqHaUEwSOLjD1xwIBxFfXNeN4I4BAopwgUFov6icX9atnDwYQJ+f3rmV+EwcIEsoJAkUPEHWyIM8eDCBOXl4yUL7bp7Y9GKhWlBMExvVDm7GJGagG+rr7ZMMUezBQbSgnCAQ9nokuIJ+a+4k9CkCc6Vf3Q8c9AYKBcoJA+NnwZ8zCMbuQj3SAqrbjxCHz+uu7abo9CqgWlBMEgi4YFx7aZA8GUEUemPI2H6siMCgnqHZaSvTXhwFUn5KSElNOThTk2KOAKkc5QbW7YuCjMmLHAnswgCr278lvycPTOtmDgSpHOUG1ajyrG5uSgQDR1+P8gxvswUCVopyg2hSW/vLwVQMfs0cBqCb6ESsHQkR1o5yg2ry3apQpJxydEgiOt1d8bl6XK9O326OAKkM5QZW7f/Jb8vjsj8wC8Ln5vezRAKrZL4Y/a16f1w1pJqN3LLJHA3FHOUGV04Wem5zCPA78BARIcUmxrDuy23uNPjWPAyOi6lFOUOXchd53+9YxpzP3r7EnAVBNfjOyhXldnte7ljl9YUEfexIg7ignqHIfb5hs8umGKWw1AQIoI/e49zpddGizPRqIO8oJAAAIFMpJFei4cmTEfhaEaHRnQwTT8vRtcmn/BlHPGSHrj+6xZxfEAeUkzv4y7uWomZuQ8CB47OeIkPBM2rPcnmUQY5STOLNnakLsIFhyCvOjniNCwlOTQ/zHHeUkzuyZmhA7CJZdJ9KiniNCwnPTsKfs2QYxRjmJM3umJsQOgmXHiUNRzxEh4blhaHN7tkGMUU7izJ6pCbGDYKGckIpCOYk/ykmc2TM1IXYQLJQTUlEoJ/FHOYkze6YmxA6ChXJCKgrlJP4oJ3Fmz9SE2EGwUE5IRaGcxB/lJM7smZoQOwgWygmpKJST+KOcxJk9UxNiB8FCOSEVhXISf5STOLNn6iCl/+aZMnDLLO+ynv/XpA5R01VH/jGxnXk84bGn+WjdBMkqyI0YdiI/R/ptnhE1bZCDYEn0cjJwy0zps2m6vLb0M7mgT+2o8aeLsoeFx35Nvr96TMT4az5rUu5tnCjIiRqWyKGcxB/lJM7smTpIKSop9h7jH0a3MedbLewTNV115A9j2siby4ebx/TFvtXmvD0N5QTxkOjlRL214nOZc2C9OW+PP10qml5fh1pIlJ5vsSByeUE5QaxQTuLMnqmDFC0nTWZ3l5eXDJTC4iJ5Z+UIU07O7VXTPPYHprwtBcWF8uLiAVJcUiJvOQujOtM7mx9E23B0j8w/uFFeWNBb7p/8lvygf0MzfdM5Pby/u8Q53XRsnykQ7jCl08zav0bumdRBPt8+3xSKhjO7Ogu7YVGPUb3k3L+er/NFZ/m3c1+Z+Sfl/D6PmHKiHpvVzZw+Mae7V05+OKixpOcel4emdvTuO6hBsCRDOXHPL07b7Lym+0q7ZUPM8Gfnf2pO9fWqr937Jr8pI3cskL+OezXiukoP0T5h97Ko279q4GPedHePf93cxqAtsySnMM8rJ3MPrJO8ogLZk5VupnPLiZ7q63h31mE5lHMs6rYTJZST+KOcxJk9UwcpWk4azfzAPM6Thbny3PxeppzUm9El4m/YeGyvs7BZLyVOQdFf5Pxun9qmsKh5BzfI9UOay/+VbnlxaTlQej+NS8uDng+3NfOA/HrEC06JKZHVGTvlzvGhBWR4lFtOwv148BOmnOQXFZpxuYX5zjvFdV450RITTh+zfdtBCYIlmcrJGud1pYVE33yEu3vC6+bNg+uDNeMirns8P9u8tuyPbTTh5WTszsVhtyIRW05aL+xnljF6XkuJvqGw2bedKKGcxB/lJM7smTpIccvJweyj8scxbbxyomVDndOrptlK8tuRLeW2Ua3M5eedafSdz+9HtZbzez8i647sNh+7fLphinNbHzq309Zc99zeoa0vzef2lCl7Vnj/FrpAvHzAo+b8LZ8/J78e2UIu7FtX+m2aUe6/l9JycnG/+pLtvDM7r3ctOVmQKz8pLSfq+871Ve+N071ycuuI52XcriXmNi4b0DDqdoMUBEuylJNfj3zBbPHU87qlU7ds6PmfDX9aLuwXes3oa6e/83rptnZ8xHWvHdzUu/y9vnUibj+8nLjju6+baM675eSeiR1kwcGNkhW2xUSXH8XOMkdf77p8CMr+bX5COYk/ykmc2TN1kKIfr+gPWLmXf+mUBV2p63nd0vDE7O5y76Q3TCH4lTO8oVNkdKuKjteFUJ0v3jdbKNzrN579kSkCzeb09G5Dh72xfJi3heOifvWkwYyu0mBmV3P5Yufyw9M6mcJzrnM/9mPU2/qNU2D0vF7vL+NeNpubL3Su9+exL5nb1+G6z4x5DLO6eVtgtCjpx1b/cv4G+3aDFARLopcTfc3oa7fG1HfMa9cdfvOwp+Vx5/Xyu1EtzeW7xr9mXs8/Hfqk81p60buunv7NGafT6uvcvn0tI95rvG9t89rVNws6TEuPnuqOuLWnv+ddR1+X7vlHZ30odZ1lR9DfNJwulJP4o5zEmT1Tp1JWpG+X7ccPmn+Hlgv7Ro0noSBYEr2ckPiHchJ/lJM4s2dqQuwgWCgnpKJQTuKPchJn9kxNiB0EC+WEVBTKSfxRTuLMnqkJsYNgoZyQikI5iT/KSZzZMzUhdhAslBNSUSgn8Uc5iTN7pibEDoKFckIqCuUk/igncWbP1ITYQbBQTkhFoZzEH+UkzuyZmhA7CBbKCakolJP4o5zEmT1TE2IHwUI5IRWFchJ/lJM4s2dqQuwgWCgnpKJQTuKPchJn9kxNiB0EC+WEVBTKSfxRTuLMnqkJsYNgoZyQikI5iT/KSZzZMzUhdhAslBNSUSgn8Uc5iTN7pibEDoIllcuJ/gq5PSw8Y3cujhr28NSO5nTotrlR4yqK/sKxPSwRQjmJP8pJnNkzdSJk3K4lUcNI/IJgSeRysjhtc9Swyua+yW/I1Z81iRoeng/Xjo8a1mXNWHNa2aLx5NyP5dzeNaOGJ1IoJ/FHOYkze6YOalou7CPnlJ4ftm2eOX1/9Rhz+uLiAXL72JflnxPbm8v/mNhOzutdSz7bMtu7/j0TO3jnz+/ziDww5W1zft2R3TJqx0LptWGqfLBmXNT9av45qb38fUI7ubBfXZl3cL257S/2rZZL+zfwFmK3jnghYoF2QZ/aUveL983528e+ZE6XHd4q3dZOMNfX2PcT1CBYEqmc3DCkudwzKfTaO6dXTXlz+TBz/rFZ3czpwkObpOmcHt7r4QLntann5x/c6N3G+F1Lzens/WvN6cX96plp+m3+wrzm9LWmy4frBjeVP4990bveSOd1raf6Zua7zjQvLOht7i90P7XNbejwV5d8Jr03TvOutyJ9e+njDV1enbHTnOpyw50m6KGcxB/lJM7smTqouWrQYzJoyyxzvvb098zp9c6CT0+7Oe+WuoYVC31haq4f0swb1mfTdHOq74quG9JUPlo3wVyeuX+N3DHuFZm6Z4UM2Vq22VcXknr678lvmhLSd9MXZmH15vLh3u3r+EemvSs91k8y5x+d9aG8uvQzZ0HZVy4f2Eh6bZzq3Z5m+Pb5Mm3vyojrJ0IQLIlUTjTXOq+3OQfWyc3Dno54TWq0sM/ct8a77L42rgub7j8bQq8jLRa//Pw5bxpdJrRbNkQuH9DI3MbT8z713iDoG4n6M7qY868vHexc73lTatxlyO1jXvJuR1/f4cVD33joqfvmQm9b7yf8cQc9lJP4o5zEmT1TBzEvLOjjLGi6ymdbQ1tC3lnxudzovPj0M+RWThFo7LwLm7p3hTe9bgF5fPZH8uDUd7xh8w5uMKdtF/WXhjM/kCVpW8xlLR16uunYvogtH1pi9HR66YJq7ZFd3u00md1dfj78GXnLeRxPzvvEua9u0nnVaPPu7aGpHaW9syBrs6ifLD+8zVxH35lpGWrlDBu4eaa5/stLBnr3FfQgWBKpnLzllPna0zubUv7bUS2l2ZweZguKvpl4Z+UI+dWI52V+6WtT03Zxf+e194n3xkOjxeaT9ZPljeXDzJsGHd96YT85v/cj8umGKWZ5oFtHBpYWDzczSgvL3RNelwbO8kOHPb+glzm9yCkqjZzlwOvLBpvHM8J549B41kemqMxwXvO6FXbkjgVm2oendZIOy4ZG/W1BDuUk/igncWbP1CS20a0tWkTCF8CJFgRLIpWTRI++kZi+d1XU8KCHchJ/lJM4s2dqQuwgWCgnpKJQTuKPchJn9kxNiB0EC+WEVBTKSfxRTuLMnqkJsYNgoZyQikI5iT/KSZzZMzUhdhAsaTmZUc8RIeH545i29myDGKOcxFkifXefVE8QPPZzREh4Oq4cac8yiDHKSRXQr9XZMzchmo/XT7ZnFwTAXRNei3quCNHoQR8Rf5STKtJ1zVhzcLMaU98hKR49PowefXffyQx7NkGArMrYIa8tHRz1/JHUjB4EcsDmmfZsgjihnAAAgEChnCBwSkpKZMiQIVKjRg158MEHZdSoUfYkAHzQ19Z7771nXluahQsX2pMAgUA5QWAVFxdL/fr1zUL0oYcekqysLHsSAJW0detWr5S0bcu3TRBslBME3vr166VRo0Zmofr666/LiRMn7EkAnMKePXu8kv/CCy9Q8pEQKCdIGHl5ed4m6Tp16sjixYvtSQCU0o9G9WNRfb2MGDHCbIkEEgXlBAknJydHHnnkEbPQrVu3ruTn59uTACnr2LFj3sc3TZo0sUcDCYFygoQ1ffp0r6R88sknUlBQYE8CpIzMzExp2bKleT08+uij5uMcIFFRTpDwMjIypFWrVmah/MQTT8iOHTvsSYCkNXfuXLPDuM7/H3zwgflGDpDoKCdIGkePHvUW0o0bN+YzdiQ13Qfr4YcfNvN77dq1paioyJ4ESFiUEySdPn36eDsCTpw4kXeSSCpaSrp06eKVEo5VgmREOUHS2r59uzz++ONmId6mTRuzZQVIVJs3b5YGDRqY+fmll16SkydP2pMASYNygqS3c+dO79sLum8KkEj045qGDRua+Vc/xuE4JUgFlBOkjNdee80rKZs2bbJHA4Gi+0zp8Ul0ftV9qYYOHWpPAiQtyglSzoIFC7yvIOtn93wFGUFy+PBhee6558z82axZM9m7d689CZD0KCdIWfoVTHdLSrdu3ezRQJXSHbebN29u5kfdofvgwYP2JEDKoJwgpenn+fXq1fM2nWdnZ9uTAHG3bNkyryh37NjRHg2kHMoJUGrYsGH8FgmqjBbhN99808xv+sN8q1atsicBUhblBLAMGDDAexc7btw4ezRw1tq3b+/NY+vWrbNHAymPcgKUQ7+uWbNmTbPy0B8XZKdZxEJaWprUqlXLzFdPP/00P1oJnALlBKjAO++8433co/sGcMRZnAn9eLB///5m/tHjlIwfP96eBICFcgJUUrt27bxN8WvXrrVHA1EGDhzozTOUEqDyKCfAGdCjzbo/Lti6dWu2oqBc+i2wJk2amPlEP8bRX84GUHmUE8CnZ555xntXzIGyoObNm+fNExw7B/CPcgKcBd2h8amnnjIrIz3q7KFDh+xJkAL0qMPuFrWuXbvyNXTgLFFOgBiYPXu29465e/fu9mgkqcLCQmnZsqV53rWcbNu2zZ4EgA+UEyDG3CPOanJycuzRSAIHDhzwnuMnn3zSHg3gLFFOgDhIT0+XOnXqmJVX06ZNOZ5Fkti+fbtXPlu1akX5BOKEcgLEUfhXSceMGWOPRoLQb2XpviT6POoxb+bPn29PAiCGKCdAFdCvlroHctMDcfEV5MRw4sQJ73nTLSY8b0DVoJwAVWjTpk3elpSXX37ZHo2AOHr0qDRr1sw8T3q8ksOHD9uTAIgjyglQDTp27OiVlKVLl9qjUY30F6nd52bo0KH2aABVgHICVKPs7GxvRVi/fn17NKqI/rCj+0OPerwa/YowgOpDOQGqme7HMGfOHG9nyw8++IB9G6qIlhD9eM0tJfqxG4DqRzkBAqRFixbelpRdu3bZoxFDelRX99+6S5cu9mgA1YhyAgSQHgbfXXE2b97cHo2zEH6QPP1YDUDwUE6AgNLfZxk8eLD3cc/o0aPtSXAG9If43FKiPzcAILgoJ0ACaNSokbdi1WNvoPK2bt3q/du1bdvWHg0ggCgnQALZsGGDt6J99dVX7dEIox+Huf9WaWlp9mgAAUY5ARKMHm32vffeMytd/frr4sWL7UlSmh6nxD2q65AhQ/jmE5CAKCdAgtJjc9SqVcushPVrsKn+44L6Y4vulhL9sUUAiYtyAiSBGTNmeCvmHj162KOT2iuvvOL97Rs3brRHA0hAlBMgSWRmZkqrVq3MSrpx48ayY8cOe5KksnDhQnnooYfM39u5c2fzcReA5EA5AZKMlhT95WNdaT/66KNJt9LOy8vztpTUqVOHfUqAJEQ5AZKUrrQHDRpkVuLJcJyUjz76yCsls2bNskcDSCKUEyDJ7dy5U5o0aWJW6i1btpQjR47YkwSaHqdEd/jVx6/HKeFH+YDkRzkBUsTevXu9LQ/PPvusPTpw9OMo/dhGH6/uW6If5wBIDZQTIMXoV5A7depkVvr6VeQlS5bYk1SrkSNHeiVKD98PIPVQToAUpQdvc7dMvPvuu9W+ZSIjI8M7qusTTzxhjlsCIDVRToAUt2zZMm9LRceOHe3Rcac77upB09wddw8fPmxPAiDFUE4AGNnZ2d5xUnSLSryPk7Jo0aKI45TwlWAALsoJgAiff/65VxqGDRsW89KQk5Mj7dq1M7dft25dWbdunT0JgBRHOQFQLi0m7sc9upNqLOhXgd3b3LJliz0aAAzKCQAACBTKCXzbf6xILn7+ECGERCWvMLYfByK1UE7gy/bDhVELI0IIcXPpC4fsxQZQaZQT+PLDNmlRCyNCCAnP3V0S66cSEByUE/hiL4QIIcTOz17nmDXwh3ICX+yFECGE2Ln5NcoJ/KGcwBd7IUQIIXYoJ/CLcgJf7IUQIYTYoZzAL8oJfLEXQoQQYodyAr8oJ/DFXggRQogdygn8opzAF3shRAghdign8ItyAl/shRAhhNihnMAvygl8sRdChBBih3ICvygn8MVeCBFCiB3KCfyinMAXeyFEqicLt+d7z8myXQVyRavoac4241blSmFxiYxfnRs1bt/RorC5QqTX3Oyoac40Y537U+kn+GHJRA/lBH5RTuCLvRAi1RO3nOj57PwSmb81X9qOOC5FxWJ+FbbjpCwzTg1dkiPdZpyUJTvzzfjjOcVm3BWt0iTfmbagqEQ+csaH3/7lLUPXffjjo1H37eaW9qEV0NVt02RHepFkZBWb29eidCK3RJxeI7syQkUj3Rk3ZV2eeaxTnVMdNmJ5rpQ402Q507qPVR0+USydJmeZv6PQub2bnBWdO15vR+9n7b4C+XROtrkPLWf6d2Q6f9clL0Q/TlL1oZzAL8oJfLEXQqR64paTgQuzzWnL4cflJy+lyX/mZsvKPQXec6U6jDshV7VOM+f/2DFdftUh3Yw7ll0st76RLr97K92b3s1ni7JNwXCHawn4ZfvQ9dzY5cSd9hInj/Y9JoMX55hhj3xy1JSK3UeK5ActQo/JfWw6rf4Oi17ee7TIFBh33P0fHZFftDtsyog77PpXDsuPX0wz5eTDL07KP7qGfmDuytK/747OGRGPkVRPKCfwi3ICX+yFEKmeuOXkvakn5d/OSlyHHTpeJIMW5ciE1XnecxX+nDXsc0yW7sw3WyuufSm0Mj+ZV+wl/PaVboV4vP8xUyrCb8eNXU607OjwZgMzzfDOzmNTzQdlmnLy8azQ1hn3tu7tdsS5XqG5/KeOGVHlRE/1Mbjn3VONlhMtLpeWjndLz91dQ/8WpHpDOYFflBP4Yi+ESPUk/GMdN0OW5JgtHHO3lF9OlH7son7UJs375Vj96CR8Ok37cSfMML29nRmhcvLD1mkR09jlRAuIDr/x1dDwrLzQlhe3nPS0yolyH88vO6RHlJPJa0P7n6j7uoUKh3LvW8uJPn7KSTBDOYFflBP4Yi+ECCHEDuUEflFO4Iu9ECKEEDuUE/hFOYEv9kKIEELsUE7gF+UEvtgLIUIIsUM5gV+UE/hiL4QIIcQO5QR+UU7gi70QIoQQO5QT+EU5gS/2QogQQuxQTuAX5QS+2AshQgixQzmBX5QT+GIvhAghxA7lBH5RTuCLvRAihBA7lBP4RTmBL/ZCiBBC7FBO4BflBL7YCyFCCLFDOYFflBP4Yi+ECCHEDuUEflFO4Iu9ECKEEDuUE/hFOYEv9kKIxC+/eys9atiZ5uNZJ6OGxTpdpoXuoyruS3PtS2ny4xfTpN/8bLnEuVyv1zG5rMUheXn08ahpSfWEcgK/KCfwxV4Ikdjks0XZMnV9nlzTNk2GLc2R1iOOy6gVOXLpC4dkwbZ8aTMitOKdtzVfXhp1XC5vWXbdy8LO/6LdYbPSfmvCCfn1G+lyZ+cMuatLhjw3NFOGO7er49s6tzVzU17E/ev9uOc7TsoyK/slO/LltTEnzLB/dj0i/5mTLe3HnTCl6dXRJ2Timly5zikKC7fnyy3t02X25jz5VYd06T0vW0avyDXXm+883jedx6KPwb39H7SI/Nu11Lzq3M9v30yXt537fnnUCWnY55jc5KzgBi/OMfej0936xmF5cWTo3+US5/Fe1TpNOow/IS8My5SfvX5YftQmTe54L/S3jlkZus70DXmmPP37oyMR90niG8oJ/KKcwBd7IUTOPj9zFuR6ekXLNPll+9B5zSJnpT/LKRG6dUAvvzs5yykFx6Wts4L+ael1NF9sKCsa9XodlQ+/CG3BaDm8bEvClHWhadbtKzDXn7A6tPLWaKH4bdhWmjV7C+SD6WVbQfT+J68tm/6nrx6WpTvzZVtaobmsBUFP9fFtPBAa5pYdLRN6Gl4ORi7P8c7f4vy9NT8+as5r4dLipOcHLMyWu94PFZran4bGbzkUum39G9zra2HSx/eOU2r0PudtDf2dWor01P23q/3pMe86JP6hnMAvygl8sRdC5OzzQWmZ0C0GujXAHT7QWUFvPhhaIWtW7C5bKZ8uumVCtxzoVge9/NRnmd646esjt5iUl7XOyl+3griXr2yVJq0/D5UGXdn3nZ9tzn80M/S47+8eKh73djsi00pv/+nBmWYr0J/fDRUM3WJj34+mfq9jZkWm529zCpJbYh7rd0w6OWVHz/eZF7q/SU5BuqKlbkkqe2xbSwuLFio9/c/csmn/3Cl03w84j+/np7h/Ep9QTuAX5QS+2AshcvZxtzYQkiyhnMAvygl8sRdC5Oyj+5jYwwhJ5FBO4BflBL7YCyFCCLFDOYFflBP4Yi+ECCHEDuUEflFO4Iu9ECKEEDuUE/hFOYEv9kKIEELsUE7gF+UEvtgLIUIIsaPHzgH8oJzAl/u6caRNQsjp02PmSXvRAVQK5QS+7D5SFLUgIoQQN1e0OmQvNoBKo5zgrGxNK5RBi3LkP3NOEkJSPtnmZwl2ZRTZiwrgjFBOAABAoFBOAMREjRo17EEA4AvlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBEBMUE4AxArlBMBZqVmzptSpU8eUk4ceekg6dOhgTwIAZ4RyAuCsTJw4URo3buzlwIED9iQAcEYoJwAAIFAoJ/CtxpR35Du9HiaEkKi8v3qMvcgAKo1yAl96rp8ctTAihJDwZOZn24sOoFIoJ/DlyoGPRS2ICCEkPP+a9Ia96AAqhXICX+yFECGE2Lnmsyb2ogOoFMoJfLEXQoQQYodyAr8oJ/DFXggRQogdygn8opzAF3shRAghdign8ItyAl/shRAhhNihnMAvygl8sRdChBBih3ICvygn8MVeCBFCiB3KCfyinMAXeyFECCF2KCfwi3ICX+yFECGE2KGcwC/KCXyxF0IkOXL9kOZy7ZCmUcMJ8RPKCfyinMAXeyFEqi5rj+w2z0FJSYl8sn6KGbbw0Cb54aDGUdOeaR6e1knun/JW1HA7qqik2Jw+NfeTqPHl5fIBDWV1xs6o4ZXNj5y/z/zdzn/h82BhcZG5rG4f+5IZ9vrSwTJw88yo2yBVG8oJ/KKcwBd7IUSqLuqnw54y5y/qV0/qz+gixU5RyS0qkFE7FprhWgK2ZO6Xqz973FzOLcqXO8a+LJP3LDeX9Rdjl6ZtjbrtprN7SKOZH8hVgx4z15m4e5msOLw9ajqlt31u71re/HBh37qSmX9SPlgzzlz+ft86suHoXvli72qnmDQytxd6nPlm/NQ9K2X63lXSc/0kuWvCa/LPie3NuAWHNsoj09+V85zbTs85Lh8743X6wVtmy8Hso+b8BX0eCd1nP73PbDmnV00zvfpun9qUk4CEcgK/KCfwxV4IkarLwM2zvK0FI3csMMPCt5zsyUqXG4c+Kec7K3D3uVLvrhzlnZ+1f50pNfZz+eTcj6XxrG7mtsKvO3Tb3Ijp1NG8k6ZsrDuy25Qkd/qZ+9fKdUOamcfRf/MMs4LS4eFbTm4b1Uq2ZR4w51dl7JC/T2zn/UicDru0fwNzXreEDNoyS3IK8+SS/vVl/8kjZrhuO9G/b6RTxt5fPTricf1qxPOUk4CEcgK/KCfwxV4IkaqPbi1wn4vwcpJVkCuXDWhkzrvj1W9HtvTOZ+Zly47jh0zCb/NU5WTszsUR0yl3q4xGy5A7/YjtC+TPY0Ifrzw3v5f5GOalxQMjysnfxr9qtpzo+TE7F0WVkx8PfsKcdx/jVqfI6Faa8Pt/et6nUmPKO7Lx6N6I4VpiKCfBCOUEflFO4Iu9ECJVl4LiItmddVgOZB+RtJxjZphuQdl1Ik2azunpFIL/mI86MnJPeM+VcstJl9VjpLikWLYc2y8nCnIibttvOQk9rkLZ4pQI3ZqiH7FoadBioZffWj7clCk9vzJ9h1esdpw4ZPadscuJe3u7ThyWvVnp5u/8ZMMUOZKXJWszdpnp3I92lE6TnntcNjt/kw7TcqJ//8r07Sbhj5NUXSgn8ItyAl/shRAhZ5pbPn9Orh3c1MxPun+KPf5M09wpVu+sGBE1nFRfKCfwi3ICX+yFECFnGv2I52RBrrRa2DdqHEmOUE7gF+UEvtgLIUIIsUM5gV+UE/hiL4QIIcQO5QR+UU7gi70QIoQQO5QT+EU5gS/2QogQQuxQTuAX5QS+2AshQgixQzmBX5QT+GIvhAghxA7lBH5RTuCLvRAihBA7lBP4RTmBL/ZCiBBC7FBO4BflBL7YCyFCCLFDOYFflBP4Yi+ECCHEDuUEflFO4Iu9ECKEEDuUE/hFOYEv9kKIEELsUE7gF+UEvtgLIVK9abt4QNSwU+XO8a/K+b1rRQ2vKAsObowapjmnnGHh0V8ftof5yU3Dnooa1mHZsKhh4fl4/aSoYaTqQjmBX5QT+GIvhEjVp+HMrjJ593K5qF89WX90j7RbNlgGb50j764aJR2WDzXTnNOrpjm9edjTMm7nYvntyJayMn2HTN+3SjqvHm3GXdivrjldnLZZ+m+aIVcOfExG71gkn2+fb4a3WdRfxu9aKi+FFaBfOoVj6p6VUnt6Z3O5+ZyPZfreVXJu75py49AnZdrelfKXcS+bcZcNaCh3jH3Z3MZPBjf1bkMf6xjnMbVbNsQ8zu7rJprr6bgv9q2Wnk6xuG1UKxnrTDNs2zxpvyz0NzWY0VUm7l4m3+9bVzYd2ycfrZ3g3O4TMm7XEu/2O64cKQ9N7Sh/HvOid3+k6kM5gV+UE/hiL4RI1WeIs3L/+4TXzfmP1082pyNKC8Ws/WvNqRaEKwY+Kg9P6+Rdb7qz4tdTXZnr6T8ntpfzeteSTitHmcsr0rebYqJ5fn7vqPvV/GF0W3P6nw1T5c3lw2VUaZnRcqBlZsDmmTJlzwq5oM8jZjotTB+sHR9xG38cE7qN3hunyYJDG737NLe7cao5fd0pXFpaLulXX6aWFpdROxbKXeNf885f2r+BLDy0yVx3SdoWGev8XVp2Gs78wBQ3+7GTqgvlBH5RTuCLvRAiVZtL+tc3p4uclbKeNpnd3Zw+OvNDczq+tHhoafj58GfkgSlve9fVMqCnH62bYFbiqzJ2yC8/f15uGNLcDH9jeeijku/2qeMUlpHm/A1DQ+Pc3DaqtTldd2S39N88Q77Xt443rsOyofKLz5+VxrO6yT2TOnjDz3eKim5ZcS//fnRrp7zUloFbZsqcA+vMMH08lw1oFFGmtDhp6dItJO79zN6/zpzX6a4a9JjcH/b3adE517nOlsz9EY+ZVH0oJ/CLcgJf7IUQqdrcOuIFGbRlllxcumWg65qxcrmzUtciope1pHRcOUI6rwp9dNNqYV/pu+kLc173T+m2drw8N7+XvLJkkNkCc3fpFhjN/ZPfkuHb55kVvxYA3SKhRSL8/rUovLZ0sNkiopd1y41u4dDzLRb0lh/0b2AKzdPzPnWKVAOzhaVT6bQaLSqPOeXlvdJhVw96XIZunSsvO4/n9rEveSXkkw1TzN+m5/Ux6t/32ZbZzu03NMPc+2w2p6f5mEjPn+MUIP0YSLeqhD9mUvWhnMAvygl8sRdChJxJ3BJFkjuUE/hFOYEv9kKIEELsUE7gF+UEvtgLIUIIsUM5gV+UE/hiL4QIIcQO5QR+UU7gi70QIoQQO5QT+EU5gS/2QogQQuxcN6SZvegAKoVyAl/0q6n2gogQQsKz4egee9EBVArlBL65BwIjhBA7+htOgF+UE5wVPbjWX8e9Ir8b2YoQQuS+yW/KpN3L7UUFcEYoJwBiol+/fvYgAPCFcgIgJmrUqGEPAgBfKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAYoJyAiBWKCcAzsqSJUskMzPTlJOlS5dKRkaGPQkAnBHKCYCz0rJlS1NM3CxevNieBADOCOUEAAAECuUEZ2XQomx5oMdRuatLBiEkxXO3k3q9jsnMTXn2ogI4I5QT+LJuf4Fc/PwhQgg5ZUpK7CUHUDmUE/hyR+eMqAURIYSEp/24E/aiA6gUygl8sRdChBBi55ft0+1FB1AplBP4Yi+ECCHEzs2vHbYXHUClUE7gi70QIoQQO5QT+EU5gS/2QogQQuxQTuAX5QS+2AshQgixQzmBX5QT+GIvhAghxA7lBP+/vbOAktvIt/5mebP09i19eZvdTXazGOY4zMyxA3bixAHHDscxJmZmZjtmZojZsT1mZmYYZibPTH26f3Wpu6sn9littns893fOPZJKpZJUMyrdLhW4heaEuMIshCiKokzRnBC30JwQV5iFEEVRlCmaE+IWmhPiCrMQoiiKMkVzQtxCc0JcYRZCFEVRpmhOiFtoTogrzEKIOrOua5WsUnNKnW0wZVN+SLwdp4pVQXFZSPh36XhqieqzNFfWVx8sVJuPF4XEqYg0xSVl6k8NQ/d7rfQ8f16Eow/GZqiSUv//Y3bB2fMuv6hMdVuYExIeqGodUqy/V0lIOHVuojkhbqE5Ia4wCyHq7AL6xQ/+0ihRNZiUqWZvK1Dvjc6Q8EBzMmd7gSwbT81S17RMkvVuC3LUVMvU3NI2WbZhJo6llKgFuwrV4BV5asTqPAl/ZXC6mrm1QDWfmS3bb43IkPOMWpOnmk7LKvfasJy+JV99vcpOA5qxNV81m+6P39cyQr2X5Mr5YLie75+mPp6QKfsQpuNN2pCv+n2bq/7k2+6xKEeup1rHFDkeIP4TvdNCrsXUYz2/Ow7MCUD62A40J7iXnotznGv4bGKmGrM2L8icNJiUJdeF+whM98Y2yc794P6Qdz1956AqLpoT4haaE+IKsxCizi4wZEWu+seXSSrFV4sy0jITHefZk6M90zc1yJwUnraXMBS3trPNCF7sA5bZL/ermiWpfCvu2sNFqsWsbLUrtlgdSjrtnAsvYLyIb2ufolrPts8xaLl97LWt7PQCrw3GaY2VVu3h6bJ+ulRZ15YjBmjBrgJ5QYNOVhi4vUOKqjc2U0yITgPLrSeK5Tw7rXtJzS1VM7YUqKz8MtVmTrbqPD9HvTfKNhS45jusNMx8ChSuIz6zRD36HRNNwpyMW5cn6f2lsd+cJGeXql6WMcEyK79U1RiUJnFQywSQN/9tkazyrPzBPepr17qrkz0nDNYBJrCDsTHPT51ZNCfELTQnxBVmIUSdXY2mZinMIH/YMhAPdEtVd3a0X4AvDLBfnNM35weZkyKfOZm7o0DMyaLdhRIPv/IBXtiZ1ot3WIxtDrQ5Qbr43IMw1Lp8OSNLzIlOF7z5dXrQtYFn+9npXtMyWf27eZKsp1vmQgvsts6h42tzMnh5sDkxj4PBgDE5lHha7Y7zmyczf7RQa4F71Np4rEhNWF++MYA5gWF7xzI8MBranOj07+1i5/EJKz90GPIV5qTJtCyVW1jmXOdNbfyGLdCcvD0yQwzgma6ZKl80J8QtNCfEFWYhRJ1df27kb9uBbbzcAT4/yNIwJwC1JqjBgDmZsdWuuUAcAHOCmoGEzBI10DIIZs3J+PX5UvuCl31FzAmWMDb4TIRPIagxmbAhX03emK8y8kqdGorRa+wlrv/mtsnysv9mh31tSGPD0SI1b6f9CQnXg1qUada9oeZBGy4w1DJVV7ewP1d9l5Bn49aFts3R0uYE67g/bU5Q2zLJd90wHk/1SZVzTt5k5zXMyT+/SpLrwWcsXD+OW7irUJ1MKwkyJ4v3FFrXat+zeX7qzKI5IW6hOSGuMAshqmLCi3r4Sn8tQL0xGeqF/mkShrYNbedmq0Er7P1fzciSzwl1x2Sq/zS3X+L4BHFlk0SJD2OATzv4zINtxO00324X8UzfNDEsH42324NUH5hundtOF3FRcxN4XYHXFLje30ob6eJTFLZbzsq2rsv+RARzgrAB1nme6mPfgz4ObT16LM5Vd3dOEQMCc4R7v6Kxvf8eKxzxUUsTeB3nqscsg/bGcLu9zuvD0uV69T7kC2qNdJuTOiMyVPdFOZIvNYfa5gxhg1fkqgaT7XxqOCVLjIuucUEY2qrg2r/wxaEqLpoT4haaE+IKsxCiqpaANicXo1Bbhc8+Zjh1bqI5IW6hOSGuMAshiqIoUzQnxC00J8QVZiFEURRliuaEuIXmhLjCLIQoiqJM0ZwQt9CcEFeYhRBFUZQpmhPiFpoT4gqzEKIoijJFc0LcQnNCXGEWQhRFUaZoTohbaE6IK8xCiKIoyhTNCXELzQlxhVkIURRFmaI5IW6hOSGuMAshiqIoUzQnxC00J8QVZiFEURRliuaEuIXmhLjCLIQoiqJM0ZwQt9CcEFeYhRBFUZQpmhPiFpoT4gqzEKLOTd/uLQwJG7PWP6tvJPXNjoKQsEDd1CZZPdzDnrX45cFpIfu9FGb7NcO81lVNQ8MCtepgoXpvtD2zcXm6vCFmiM4OCafOLpoT4haaE+IKsxCqqnp/jP1Se65/mvpzI8t07CtULw6wX+gwG4/3sl/yeAEu3+c3JIeTTqttJ4rVg91S1YJdBeqqZknqeSuNm9smq91xxer1YekSr82cbLVwV6G6r6s9A/DYdXnqzo72+qLdBepAwmnZ3mql9a+vkpz0//mlvT7fSvvJ3qlq07Ei1WKmPctu14U5zozCT/iur8+SHLX9ZLHcwyHr2g4lnla3tkuWfX9qaJ/riiZ22mPX5sv5EFefT6vxtCxJB+swOLti7fX3x2Sql6x80TP9/rdFktzL8v12nmw4UmSl6zdndUZkqA/GZqrPJ2XKNtLBPcAoII+RXwifv7PAupYi5zhc19sj7b8J8gV5eTDRvp+1h+14/Zbmqisa2/EXW/eF+/18UpaatTVfTd6YL+GtZmVb91GkbmufrLZZ94Pjm07PUte2svNky/EiK89y5X56LMpRgy2TtfpQofqTte/lQelqb/xp9Y7vOqqyaE6IW2hOiCvMQqgqqvbwdHVNS/tlhZdlu7nZquM8+xf2zlPFqv+3uWrtoSJ5qXeenxN07Fsj7BfX1uP2C/OlgWnqL9bLvprPeKyzXqTjrJc3jIE+Zl+8neYe68WHbf3iXra3UL07KvhF+Fy/NOvXfpak2WJmtoo5UKj2Wi/q6gPTxRjoGotpm+2X8Ywt+WKgFlpmZvY2f80Kzj93u70N04GX72M9U9WVTZLkxRN4Tgjneap3mqpnGYvhK3Pleu/qlOLU1mD/3628glnBdnsrz26xTNBnEzMlTZ2OrlkavCJXrgHXh+2pvutdY+XrPy0zdnfnFPX3pkmq0ZRMtelokZxvyZ7CoHyb47v+RlOz1N+aJqrrfAYDen1YhvwNG1h5iWOHWdf8dJ80K+/z1UorP5ZaafVeYv/ttCHC8S9YRnLlAfsakZ84dsCyXPWpdR8wQdiPvNLnqaqiOSFuoTkhrjALoaoo/PLH8oFudu2Dfhnd0SFFjVpj78Mv/UeslzleYIHH4oWKJQwDltM22S/dvzS2DQGMyObj9j4U8Ehb/6pHjQVe+Pd0SZH0dVhg+h2+yZaXJdbxokQ81Dx08Zkk1AYgbPXBIuda7rFe9NUtk6RreK62rhmGocdi+xi8gGsNtc3NF5OzZJ9+YQfqo/GZamhMnhgjHQZTguU8y6Tca103aolQw4FaJlw77m+g73oh1KRguWBngbqpbbJ6sFuK+quVNz1919LLWsKA/ad5kqo+yK6pgiHEMvC80FKf0cHxgbUz0MQNdp5qA6LzE8Lnrd5Lcp3jUauFZaMpdu3PoBX29dYcatdyBQqGFKbLDK9qojkhbqE5Ia4wC6GqqP9aL8ZNloHQtRbzrBfpyoP2SxUvedQ03NY+xanhCNTm40XyUh6+0n5Z4hMPlqgRaD07Sz7nwATg00I936ejlwfZaf7nqyTVbWGOvNBhKNYZn0SgPXG2+cD6YuvXf/OZWVL7sGi3/aJ9tm+a+sT6la9fzhuPFqln+9kv+dazs9V6K018/sF246lZUpOD9UW77ON3+j7XoHZBn/Ov1v3ssAzCh+MyxWChBgOfYLAPtUpY4lMNljAdXRbkiMGBMUDtTKDBwrmRR7gHXKsORw3JuqP2tUyxDF13K97TfW1ziLxea103anZgfvQxHeflqH/4PnONXB2cT6t91w/jgs9DyHdsb7aMHMzTQ5bxrG9ds74W1Oh0XWDnC2qhdDrbrGOHrLDT3mL9T+DvE3ieqiqaE+IWmhPiCrMQorwRDI5uM4GXIF7aqB0w413MeqpPmlObcybpTz0VEWqP8AnJDKciK5oT4haaE+IKsxCiKIoyRXNC3EJzQlxhFkIURVGmaE6IW2hOiCvMQoiiKMoUzQlxC80JcYVZCFEURZmiOSFuoTkhrjALIYqiKFM3tqE5Ie6gOSGueHVI6NgOFEVRgRq9Jt8sOgipEDQnxBVpuaUhBRFFUZQWBqIjxC00J8Q1ydml6m8VGI+CoqiqpRvaJKvikjKzyCCkwtCcEEIIISSqoDkhhHhCjRo1zCBCCHEFzQkhxBNoTgghXkFzQgjxBJoTQohX0JwQQjyB5oQQ4hU0J4QQT6A5IYR4Bc0JIcQTaE4IIV5Bc0II8QSaE0KIV9CcEEI8geaEEOIVNCeEEE+gOSGEeAXNCSHEE2hOCCFeQXNCCPEEmhNCiFfQnBBCPIHmhBDiFTQnhBBPoDkhhHgFzQkhxBNoTgghXkFzQgjxBJoTQohX0JwQQjyB5oQQ4hU0J4QQT6A5IYR4Bc0JIcQTaE4IIV5Bc0II8QSaE0KIV9CcEEI8geaEEOIVNCeEEE+gOSGEeAXNCSHEE2hOCCFeQXNCCPEEmhNCiFfQnBBCPIHmhBDiFTQnhBBPoDkhhHgFzQkhxBNoTgghXkFzQgjxBJoTQohX0JwQQjyB5oQQ4hU0J4QQT6A5IYR4Bc0JIcQTaE4IIV5Bc0II8QSaE0KIV9CcEEIIISSqoDkhrslJLVKdHlqtvrp+GUVRlKOez65TZaVlZpFBSIWhOSGuiBlxPKRAoiiKClRB9mmz6CCkQtCcEFe0u3tlSEFEURQVqOHvbDWLDkIqBM0JcYVZCFEURZnq8vAas+ggpELQnBBXmIUQRVGUKbRJI8QNNCfEFWYhRFEUZYrmhLiF5oS4wiyEKIqiTNGcELfQnBBXmIUQRVGUKZoT4haaE+IKsxCiKIoyRXNC3EJzQlxhFkIURVGmaE6IW2hOiCvMQoiiKMoUzQlxC80JcYVZCFEURZmiOSFuoTkhrjALIYqiKFM0J8QtNCfEFWYhRFEUZYrmhLiF5oS4wiyEKIqiTNGcELfQnBBXmIUQRV0otbkjRvV+bn1IONTipuWq9/Pl76MiL5oT4haaE+IKsxCizp/KypQ6sT1TrRx5Qk1suDtkf3kCW+fEO9uL+x6RsFWjTsj2lC/3yDbSBIfXp0t4UV5JSFoVkWZw7c1qVP3tzrbeN7fTgZBjujxiTxK3fV6ibO9YkOgccyaN9KVvhkOdfWma4dT5Ec0JcQvNCXGFWQhR508wJ8uGHHO2YTAQBrbMtg0IKC2xAzdOi5NlWWmZWtDzsLN//aRYlZ9VLNvanGC9MO+0Ksg5LevhmJOt1rUkHspReZnF6ujmDCd9cCZzAprf6Dc42Nfy5uWyjvuEEHZwbZqEbfvGb2LyMor0YbJNc3JhRXNC3EJzQlxhFkLU+ZMYEXlJl6mhdbaoVretUAdXp6qCrNPO3wa0u3ulannLcmdb15z0eGqdbPd6dr0sYQS0OclJLZTlhimxEvc7zckNdpoj620L3ec735A3t8gSLB96TJZ635nMSdy+bHVofZrKiC9wjtm1OElNb7nXOb71HTGyxCebteNPOfGQN+3vXWWde7PatSSZ5uQCi+aEuIXmhLjCLISo8yez5qQwt0RtmRWvNs2Id/42be+McQwEtlGLstt6wWM9O6VQalFOF5VKeF5GcVDNSaC+05ycRQDmZHLT3arH0+vOyZygnUhuWpETF8s1Y0/KPWtT0vKWFbKc1GS32heT4sQTc2KZsubWvXd7fA3NyQUWzQlxC80JcYVZCFHnT6Y5WTH8uJgNhOm/TXF+icQryLY/z+Dlju3xDXZJnK/f3Srhw60liJQ50dumOdGsm2TX0EDanJjpYAmzUVxQIveZHlcgYatGn5DtlaPsdjIIO7EtUwwXNLLedpqTCyyaE+IWmhPiCrMQoiiKMkVzQtxCc0JcYRZCFEVRpmhOiFtoTogrzEKIoijKFM0JcQvNCXGFWQhRFEWZojkhbqE5Ia4wCyGKoihTNCfELTQnxBVmIURRFGWK5oS4heaEuMIshCiKokzRnBC30JwQV5iFEEVRlCmaE+IWmhPiCrMQoiiKMkVzQtxCc0JcYRZCFEVRpmhOiFtoTogrzEKoqmvj1LiQsO/S8S0ZIWEQJuAzwwKF+XLOFkdr29yEkLCKqPmNy0PCWty8XF4yZnhFdWJHVkhYJHVyR2ZIGDT4jc2q2+NrQ8K1Dq1LCwkrT5jXxwyjyhfNCXELzQlxhVkIVXUdXp8uS8wVc2BVqmpbLUZ1fni1ivn6uNo0wzYuB1anqu3fJKjj2zLV0oFHZd/h9f4X4u6lyWphr8Nq9Ec71N5lKaqlZQpw7NY5ttHQ58AsvGsnnFJjP9mh+tXYoLbMjpdZfLFv7/IUtW7iKTXhi11OuvtXpko6eGljjp3dS5LtcOs6t89LUB3vX6WmfrVHrRl3Ui3ue0T27VuRomJGnJD1ac33qla3hr6QpzTbE7Q9pPYW69pOigHYPCteHd2UIXPiHNmQrr4ddFQt6HlY4q0ec1KWOxcmyfrsjgdkfpwdCxIlHLMnb/vGb66QHvad8JmO9VNiJe+QP0c2pqt91v0hHNeO/E04mOsci7mEcO+Yvfiw7zo63LdKzo37RxxMmLjKug78TQLvZ4J17J5vk9XRzbaZjNubrVaOPKFmd7AnLcTfOWbEcTXm4x1qz7JkWcc8R4FpVHXRnBC30JwQV5iFUFXXpulxqt/LG9WgWptle1qLvar17SvkpXt0S4Zqd/dKCcdLHmHHt2aG/Io/sc1+CcLEYGZe1JLM73FIrRptv8xjd9s1EHgpY4l9x6y0R9bbpqa33KvGf75TdfbVcPR6br2TLmbtxXLZ0GN2+tZLtf099vVAW2bGqyX9bVOClz4mA4TxQboDXtukTu7013z0rb7BOs8u0ez2B2TyPb1vyQA7jTmW2cCxuJ5+NTaqEXW3SfiuJfasyLqGQt8/DJW+LtzzyPft+FojrO3Wt62Qmg+YneSjeRKOex9Vf7sYBszAPLnJbqnlWWmZBMxMjDBttiBtRmL3ZMn14R5hWvq/slHCh9XxT1QIwQRiqdM4ssn395HrXK5a3uKvZRrfYKekGbcvOyiNqi6aE+IWmhPiCrMQquoaaL3E8Qu65zPr1Pb5ifISRY3FoFqb1LpJp1S3J+wXMX7F608nMCyz2u530kg8bP/ijz+QYy/328udixLlmEmNd1u/+m1TgfPAgMBYYLvTg6vlpYw0R32wPeja8NLE8sAa++WMWhfMAIz1Jf2OSNpzOx9UrSwDgGtAzUCLgM87J7aX/5kEL/vAz0zadKyfZL/UUUOBpTZCeKkPeXOzWmydE9erj0PNBZbLhx2X2iY7LbuWCDq6yV4/tDZN8hU1J9hOOGjnT8+n10n4iHrb1WYrf/H5a/XYkxIGk6jT0TVQqNHBErVbqP3p9ew61a/6Rsf0aSUfs00QTEqXh9c4syyjtknXJMEMYamNCs4dmEZVF80JcQvNCXGFWQhVdemXFWpP8JLHOgpmmIUuj9pGYNDrmx1TMLDmJtX3pQ1BafR4ap382u/1rF3r0eaOGDE33S1jgxctzoFPMNiHNGEM8DIfbKWrX+qB59BCDQ6WfV60z6f34zhdo4MaEdQioHYC2wNe3STCeXH+wPS+Szp9SfsN/3XgmlDzgWvGPeEe9HkhXYMCwwIjg9qnwLYvqFnpb+UrrgU1StrswBjgPNoQIE7HB1ZJvuDvgLAelnEZVNO+Jxg63Gf7e1fa7U989zWwVmieQQt6HnJqwtre5b/ero/57svap2uoBryyUWpgcI1mOlVZNCfELTQnxBVmIURRkZLZFiSSGlpniwifomAgzf3UuYnmhLiF5oS4wiyEKIqiTNGcELfQnBBXmIUQFayN0+weOoENT/FZwYx3LkIvn3UTTkkjUHPfmaQ/cUAbp8bKZ5LOj6yRmgFcJ9IMjD/s7a3+thTWcteSZLV+cqxaNthuUHs2fV13W1Bbj++S/mSihYbA6yefCvo85Eb4ZOR8bnl1o+rzwgY17rOdauhbdpsR9MBB12/ce5tqMdJGCOuBf6uzSX92wmccNCI291O2aE6IW2hOiCvMQojyC58h0D4ksJ0ChDDsWz7smFrY2+5WO/XLPWrvsmSnQSXGJ1nhe9nN7XTA6V4Lxe6xe4Ic83VtRQNcdPlFWw28JBEX6Xb1tXGBuj/lby+iz4EXxryuB6VXTeD1aeleNRB6Fel13Z4CPXQWWefBdaJxqDYy2+clqmlf7VVdH1srvYcQtsEyQ7orNbrvbvsmUY37dKe0+cD1aoPS56UNTnsX9M5BuxE0btU9ZvpW36j2LE2Wxqtol4PGrTj3oj6H5byB12+OcwLT802Xg7Kur0XfD0wU2qBgG21J0D5nu3WNyB+EoccRzBwMT9u7YuT60V14+3yc3z6vbjhLhYrmhLiF5oS4wiyEKL/QVRjLkfX8NRwd7rUbsmKsDSx3LU6yftHbY2+glwtehrPb75cXv+61EyjUYMxotU9NbrpbXqpdH18rNSk4dkGPQ2r/Srs7Lmo4Ao/TL3cIRmD4O1uda9DjdwTKHIQNXWQDj+3+5Fp5ieMa8NLH9aL2Ad2lEe/gWrvHDhoF49og9PaBMdo43TYGSwcdVe2MWgo99knr22OkgevBNXY6s9rtt8zDKumphG30EEJewNhgiQavgelgvBZtlrRQ8wNDg3UYQyzR82bZkGPqgO88HR+wGxSjhxWWm2bGSw8s3Rh4yYCj0oBW9yzCden0da8qKlQ0J8QtNCfEFWYhRPk11/crPdAo6J45uhssutOidwe626IHCsJgSlCYB9ZWaGG8EG1w8EkGny0G17ZrGlDLIN14rRfwqV3+MUmmW2Ym8EX9re+zzMw2+2SpX7SB0gZCa8fC4FqJVZbxgoH5+t2tUpsAs4JzwChhf9IR21jJ4GsbbROkuw3DOOAaUTOiP7FoacOENGE69OB0+ASD+4YZwOcm1LDg8wtqpVAbgkHVAtMxR8Y9tjVDrhdjt2BbGzKYDphHjJWCbaSLpe4OjQHpdI8q1GDhulDzhd4+6MWk7w01U7o3FhUqmhPiFpoT4gqzEKL8woitWOKXOQY+w7ghaIeBl5vuASKfJ6wlakMmNrRHc8U+dIfFizTw0ww0CQOM+UyMNheoTdCjtGLwNQwqpgdCg9aMt2sjtBb1sfehKy/OpQdH08L1fdPZNlZaSBc1HboNyZL+R519i/seFnOCdVwvDBfi6bFPUFuCMNRudHpgtXTXxZgk+IyCOIHGAvmE/Jrc1L4f1MYsHeDfP/bTnU7eYeRWGC+sI09Q4xR4zVrTW+11unXrHj/oyox1GB3nvJZpG+0bGwZGA7Uk/jT2OV2dMVIuPklhHfmCvxPGXjHPS/lFc0LcQnNCXGEWQtSFFT5T9H7BPyosRUWDaE6IW2hOiCvMQoiiKMoUzQlxC80JcYVZCFEURZmiOSFuoTkhrjALIYqiKFM0J8QtNCfEFWYhRFEUZQqNoAlxA80JcYWecZaiKOq7hG7jhLiB5oS4IietKKQgoiiK0sLYMIS4heaEuKYor0T1fHadjCWB8SYoiqIwRg3mcyIkHGhOCCGEEBJV0JwQQjyhRo0aZhAhhLiC5oQQ4gk0J4QQr6A5IYR4As0JIcQraE4IIZ5Ac0II8QqaE0KIJ9CcEEK8guaEEOIJNCeEEK+gOSGEeALNCSHEK2hOCCGeQHNCCPEKmhNCiCfQnBBCvILmhBDiCTQnhBCvoDkhhHgCzQkhxCtoTgghnkBzQgjxCpoTQogn0JwQQryC5oQQ4gk0J4QQr6A5IYR4As0JIcQraE4IIZ5Ac0II8QqaE0KIJ9CcEEK8guaEEOIJNCeEEK+gOSGEeALNCSHEK2hOCCGeQHNCCPEKmhNCiCfQnBBCvILmhBDiCTQnhBCvoDkhhHgCzQkhxCtoTgghnkBzQgjxCpoTQioxWcs6m0EORbHbVHz7P8t69vJuKnngvUYM9+Ss7m8GndGcpAx/0gwKi9Qx330uh7JSVZx80AwlhFQCaE4IqcQkdPq7yt85wwwW0qe8o7JX9FCFR2JU7obh9nLLeFV4eLmK73ilKjqxXiUPfUwVHFwi8RN7XCtL7APZMT0tE9JXleSlqeLEvU66mrSJb6rM+c1UbNOfyPa+z3+sCg4sUqljX1axX/1SwooTdquy00VWmn9ThcfWqKR+1eT8+btnO+nEtvgf6xqWqtz1w1SOpcSe10t4Qud/qPSZH8l9FCfukbD83bNkmTmviSrNT7fSu1OdTjuq4tpepgoPLVMlmbHWNSxWOSt7q4Qu/1JlJcXOeQghlQeaE0IqKTmr+qrUMdVVwb55SpWVmbvl5V54fI3UmMCkgNTxNa2X/w0qttnPLPNhh6GGAcR3uEKWib1ussJKVMrwp1RC1/+oktwUlT75HTtuAPHtLpdl7Jc/l+Xs+nYtDc4b1/I3sp61uI0sM+c1lWW8ZRhyVveTdU3ygHtkGdv8Vypl5HMqrtXvVf6++dYlFFnmZpeYmrRJb9lxBz0gy+Kk/Sp/zzeqrCjXMjbfynFQ3rZJ1vVcKnFONbzEPgEhpNJBc0JIJaXw2GpVeGKDrOesGWDsVSqp/92q1Hp5l+amquTBD0oYXvZlRXlS45I89FEJQw0E0CYhY9anUpNRVpyvUse9JmHx7f4kS4CaEBDX+vf2vs5XiTkaV/cfcq68rRNU2hTbzMR3+KssCw99K0uAWpCCvfNkvazktMpe3kXWU0c97wsrUrkbR1ie6bRKm1xHwmCmUAsS1/oPdiIWSQPuliVMmiotccK1WYpt8mMnjBBSuaA5IYSETdaSduq1l18yg8MGtTyEkKoHzQkhJCzeeOMNNeWjq6VB7HvvvadGjhxpRnENanEIIVUPmhNCSFjUrVtXjInW0qVLzSiEEHJO0JwQQsKmZs2aYkzq169v7iKEkHOG5oQQEjYLFiwQc5KVlWXuIoSQc4bmhBDiCW+//bYZRAghrqA5iQCn04+polObVdHJTRRVYRXHbTf/lch5At2Ui2K3hPxNKOqMsv5nSrITzH8n4gE0J15SVqZONfweRYWlvK3j5d9p9erVlUqzZs1Sq1atCgmPZoHU0S+F/A0o6pzUiAP+eQ3NiYecavaz0H9ainKhkuzEoB4wlPcaMmSIyvymcUjeU5QbnWmeK3Lu0Jx4RGleWsg/K0W5VWwTe74aEllONfp+SN5TlFsR72BuekRJxsmQf1SKCkck8ph5TlHhiHgHc9MjSjJOhPyjUlQ4IpHHzHOKCkfEO5ibHkFzQnktEnnMPKeocES8g7npETQnlNcikcfMc4oKR8Q7mJseQXNCeS0Secw8p6hwRLyDuekRNCeU1yKRx8xzigpHxDuYmx5Bc0J5LRJ5zDynqHBEvIO56RE0J5TXIpHHzHOKCkfEO5ibHkFzQnktEnnMPKeocES8g7npETQnlNcikcfMc4oKR8Q7mJseQXNCeS0Secw8p6hwRLyDuekRNCeU1yKRx8xzigpHxDuYmx5Bc0J5LRJ5zDynqHBEvIO56RE0J5TXIpHHzHOKCkfEO5ibHkFzQnktEnnMPKeocES8g7npETQnlNcikcfMc4oKR8Q7mJseQXNCeS0Secw8p6hwRLyDuekRNCeU1yKRx8xzigpHxDuYmx5Bc0J5LRJ5zDynqHBEvIO56RE0J5TXIpHHzHOKCkfEO5ibHkFzQnktEnnMPKeocES8g7npETQnlNcikcfMc4oKR8Q7mJseQXNCeS0Secw8p6hwRLyDuekRVdGcJHS8UiV2v0Yl9b1dZc5rGrI/HKWOfkllzmkQEh5vnTN7WeeQ8ItRJPKYeU5FXvL8Nv5haPjSDiqpz20h4ZVJxDuYmx5RFcxJ7qZRqux0gSo6tVmlT6+nkgfcY5mIF1V8+z+r5EH3h8QPlAbrpbmpzvp3KXf9MFWcuDckPMk659mOvVhEIo+Z55VNhYeXq7KSIlUct1UlD34gZP+ZBPAsq7JSyyz8IGQ/VBy/PSTMFMjfMc1ZL81JDoljxo9t+pOQ8LLThSp96nsh4ZVJxDuYmx5RVczJ6dRDKq7NH6Vw0eYkfdr7qiT9uMrdMFyV5qWrkuwElb9rZtCxIH/vPBXX8rdSCAGEl+Qmq9L8DKuALVanGv1AZVm/nkqyE63zHBFzkjLiWau0O22lm6oSOl1Fc0I8xczzyibzHnLXD1ElWfF2eJMfqaR+1VRR3Db7GSvMLffYouPrVGyzn1nP2jPy7MGsJA95WOVtmyjPZUnmKdlfVpyvSguzJdxMB8Q2/akqPLbGMScAZYGcp9H3ZVmam+KL+xOV2Pc2iYvzJfW7k+aEBMHc9IgqY06S9zvb5ZkTFHTYBwKPle3GP7SXjS6RZXzb/3PigeThT1jlVIls522fLOakrLjA+lW4TRUeWaEKrF+JNCfES8w8r2wy7wG1KIVHYiQ885smYk5gNMqLC5KHPur7YXCJKjiwyCrHTkpZhjQQR9ecZC1pp4pObpDnEDLTSepzqyxTx74ihgNGpWD/Qt81FavEHtfZNTS++DAnJTlJTnoQzQkJhLnpETQntjlBASPGImlf0LEA5iTRKsScbevXFOLj1xYKLvw6K9g3X+XvnGr9QssRc5K7ZaxVuJ1WuZtHq9y1g2hOiKeYeV7ZhFqNsqJc69kcKZ91yopy5NkD2pygJqXQ+tGgfMZfS99/xjeNVOqYl1XB3nmqND9dlVppaHNSZj2XOeuHSlsvfI7Nk+exuNx00PZMmxMdnr99iixhVkDBvgW+7Z+orMVtrGd/tcrfM0cVHFxMc0KCYG56RFUwJ2cTzIku1KjwRSKPmecXm2BOKnsj08ok4h3MTY+gOaG8Fok8Zp5TVDgi3sHc9AiaE8prkchj5jlFhSPiHcxNj6A5obwWiTxmnlNUOCLewdz0CJoTymuRyGPmOUWFI+IdzE2PoDmhvBaJPGaeU1Q4It7B3PQImhPKa5HIY+Y5RYUj4h3MTY+4GMyJHjSpoor96hchYZFWfPu/yPJcr/Vsim9zWUjYhRaJPGaeVzalDHs8JOxsSuj4t5Cw86WCA4tDwsIRRqs2wy6kiHcwNz0i+szJJfay8Q9UbJMf29uNLglY/76tJj/yH9PIFxeTcumJueR4X5xGvvk3fPNwZMz5wlrHPqRrL83rQHrO8YFxrOOccF88uZ6gY38kYc4+azsNgzTh2nTcwPUmSNN3f4HXIfejrz0gvuSHfQ0y6mU5k5FdSJHIY+b5hZL+P3SeCfy/6v9H/L+W9zzKth1uP2f43/eHBz93vrBmP5N5sfQzHpSWI7t8CHr+9Ll0uC+es0+HOc/WD5ywoGtrZD+b9jPte06dcin4Guw4eG71euBzbunLn6uUUc9H1XNLvIO56RHRYk7iWv9BlvZIrJeo1HGvqrgWv7Ee6B/LIGlxLf5HFR5drbJX9pb5LGK/+qVzLLaL4nbIsPLZq/pIWMGhpXI8Zh/O+rajhOVuGCFLzJUT++WlqmDfPPscTX+mctYMCLoejPIa1/zXKmftQOva/qjy9y2QwgTzfSDN2C9/oVKGPmpfl2/oe22cUr5+WiV0+rvsy9/zjXX871XSgLulgBfLapAAACpPSURBVE3scb21/ymVNOh+lb97lv9cLf9XZcf0dM6PESsTul2t4q10MLpsYo9rnV9vmP8HaSKfik5tlXQDr/1Ci0QeM88vlPJ2TJFlLkZjtf5XU4Y/KctY69nJ+raTGAo8aznyDP/GOQ4jrmJZnLBHxbf7k8qY21C2JY1hj0ncjOn17bj7F1nP9mUymzj+1xEfc12hbEib9JaTZur4mip9xofy3CI9PFMYqTl302gZBVYPh5+/e7akn/L1kypz/pd22N65ssRzm9T/LhVrpR/X9v/JfcBMxLX6rSo4vEKeaSwTrDLAPsdv/WZFrnWBpI2RaTGsPtYLDn0rc2+htgRlCWYux6Sj5U0ieKFEvIO56RHRYk4wdDyWRSfW22HWLwy8jM1fSEUnNwdtZ85rbBuCEc/40pmi0ia8bhUmv5NtFGgwI1hHoYQlhrXWx8MEBaYHoUBCARLb9McqY9YnTnicZX5Q8CX1u0POWXRqi4QXHltr77cKqjyrIJTz9rhOlviMk72ihz9967iCg0tkXe7ZKtgy5zWRX5YoXHU8DLmv1wsO2PHzd/snJRRDZB2TNrG2P+0oEYk8Zp5fKOkXfmLPG2SJ4d7x0s7daP8Q0MrfY7/8tTAEPH6QwAjAEMR3/JtK9z1rib1uCvrxkbdtkspc1MpXG4Fz/Mx59gKln5PYZpcGhWsDlTr2Zet5f82u3bG2MSN5ovUDAIZDzmvdQ1y7y+1aDTmvXSblrO6nAms1YTb0Mx9S+xGwHdfSNmP5++zyRwzLwaVBz3a0iHgHc9MjosWcZC/vqnI3j7F+lcTINkyBLoBQOGUtbafiO1yhctYOCjoOv6qwhGmQuDuny5wXeTumqvxdM+w4h5arrCVtrV9xvl9ih5ap5AF3W6ahu8rbPNY+/6q+TpoJXf+jdGFUnLhHpc/8SGoxMhe3loItd51tbnK3jnPm78B24ckNUjhjPWfdEDEmGfOaynr6zI/tX1lyrj4q85vGUggndr9WJXT5p8wvog2VpHV0pcqY08BOyzpH+uzPrIL0GpU2+S0rzSZW2DApCJE3WOb7CuBoEIk8Zp5fKOH5w8sf/9uYXypj9qfykk8d9YJlUEaqAl+NRObCFkHHiTHoeb2soyYRy6L4nTJfjvxPN8QzNFimlcAPDzyrGTM+lHWYGJxL0tKfTHAt1otfr+PY7BXdpJ2Krl3J2zpe2pvBKKFGBWGoFSk6tUnWE7r9V2pmUX7Y97bAMk93y3XZ2wutHxSTpP1YUZw9sWDqmOrOOeUc1v6cNf1lHTWc+AGCa0AtKfIg0zJleVsnqPRp9ZyyIhpEvIO56RHRYk68lPOZpYpICveAquULLRJ5zDy/GITPm2bYxay0yXVCwi6UiHcwNz3iYjQn1IUViTxmnlNUOCLewdz0iGgxJ3HNfyVLtDOB0JgN27qK1a0SuvxLxXe8IiTcrXI3fu2s47s5lviEhOphfe1QYu9bQo79LuFTVEXbjiSiLYv5nTvKRCKPmeeVTfisgWccz4rZGD0c4fOwGRZxNfmJim/z/0LDK5GIdzA3PSJazAkKK7TzyEVbioZ2OxN8qghsBKqVvbKXypj9uaxnLWkjLfyxnjHzI5Ux9ws7fFFrK85nKn/ffKvwGyjfxGEm0M4D34nRqBXfsdHzRs4/+W3rGt63TREaqc7/KqhRnlagicB1oPFsUv87fe1UYDTsdi6mkvrcqnJ8vXF0zwT0ZsAS39ELj64KKqRThj8h4XbvJftcuH70RpD9Qx+zwnpK7wU0Ksxe1TtqvmGTyGPmeWVTUp/brGfxBnnWkvpVs56736lYXwNSU4ndr1MZcz5XsS3+x28+Gn1fZS3r5LQ5SR70gK/X3nZ5jtDYFg3R8dxhf/qUd1X2ss72sY1/oLLRk8j3LEnPIqNNjFbahDek7QrOg/QSuv7bPqbZpfbz/+UvVP6uWdKuDD2KzOMri4h3MDc9IlrMCboCo8CSLnxWwRJrmQQ0ctVdjB01/qFlHJrJOlr5YwlDoBuo6cIq85smskTjVyxTx9aQZfLgh6zC6H+sgukDVXRyoyo8sUF6+GBfbDP75Y5GuWnT6lpL+9jyhC6QWGZZBkeWS9vLsih2W0jcnFV9xXwhTTTqtY/fLcvkwQ+qU03RXdpfIwMVHrd7A+RtGSddDrNj7B4/MDFm+kgXQldrc9+FEIk8Zp5XJmkTnW89t/gBoHvolTfQWVLfO1Rcq99bRqSL3cvG17ZK9xJCTWbqqBedQQ5141fde0g3rs3dPNp63u2Gr7rxe671bKFRLhqe4/nRP3gCleCrdcWxiJO/95ug/akTXldF8btCjqtsIt7B3PSIaDEnhcfWBBUOyQPvU2nWrx2zNgCFmdOrxVdQpaPQ8HVVTB33ioyrkNjrRtmWXi0N/Z9gspd3k6UUZlIzM1sVHl4uYQld/i3nQ++cwHOagtGRMQqswhK9h6Ci2K2yL3NB85D45qiwqKFBrQ7W0ZsHy8DxGiD9OQuFKwwN7gnb+LUW2KsnGkUij5nnlUkYjwhLjBeCpe7aX16D2LytE5WM5+P78aGHDNA95NCDTY9fhE+r2pToc2CcIT2eEGpNsdQ1JugRmDLS7jZ8NhUeWenf1gOyWWUFevjooQEqs4h3MDc9IhrMCT6loJtvoVVYoRZE12QUndggSz0GCpQy8tngwYua/VQKnYyZH6v8HVOlC2P6lHecsQ7ytk1UmQtbyqBHqJ2QwdSscAwChcIJXXrxmQfHZmEsBWtftvUrLX/ndPkUlDzkkaDuilDu1vF2GgFdF/H5CIUWCits626SEMZwwC8udJVGTUny0Eft8HZ/dgpOVA3rT0a4P5gptEXBQFMpI571xb/cSRfmBQPEyfreeZI2qpgDr/NCiUQeM88rk/T/OQwHnnf7ebhEnv+E7lfL/7mOq2soda1gjq8bP8oEXS7o2lGMg4LnAs8IBmHMWtxaajQxlhHKFP3JF7WR+EGBePgsimczZ+1g3/nKrwXB2En4oYABEXXXZ/zIQDmDZzhwAMXKKOIdzE2PiAZzcj6EqluYitDhpu0Grfj1g1EgzX0XQvbYCdHTNfhcRSKPmedUsFATq8c1ChTGOcGUD7nrh4fsq8oi3sHc9IiqYk6o8ycSecw8p6hwRLyDuekRlcGcFJ7YKMuiU5ulClbP0YFhoNFmRPe4KU+FJ9ZLYzi0psc2qowxiqN8y8bnGoz4ummkKHX8ayHHa+k4aRPfCNkXqPjOV0m7GMw1Yu7TQhr4DCPpbhwhn6TMOGhEG9jeRn/a8euSoGH4o0kk8ph5Hg3KWtJOnjV87jD3lSd085fnauPIkH2S3qKWIWHlynqO9Qi0+MRS3lxTmJsqofM/nG27d2A5aZ1BeTunySizej6e7xJGgzbDtHQDfz2MvUyF0dC+btTgmiPOni8R72BuekQ0mhPnG7JP6PKLZeqYGiqx181OYzgIjUV1IzmR0T4kbfI7ssQw2BgjJDAuuhxibo0Uq0CAAo+LCxy3wDIwThwrfXzrhslBK30UJk4bmEaXOMPpI110UdQNddOn1nXSQ0GU4xvCXhrCWmmmT/9A9mFI/MSeN1r39VfpohzX5jKnHQsmHZShsy2TJj2VGv9IuhzLtZQz18iFEok8Zp6fb0lbrIBtc84rzFeDZ1M/D5gGAs8tuvXrOPacNQGNTZv8UP6XC0/aP0bQNVfGD7LSwP97pq8LPoRuxYGjIku7ki3jZF0/a2g8jrZmkEw90RC9+BpLw3dMD6GPxXMm5z1i94RDmzNcu+7qD5nPF0ahxgSE6GGUNuVteUZxjTIlRZ9b5fOR/1r9XaR1e5vsmF72tm+UWLRZsyf/DJiH6zyKeAdz0yOixZxgHgrUioj0vBk+4cGPswoCjFVQYJkMhKHHCsyK2X02vk3wWANomZ+1rKtK7H2zjG2gzQsKFvTyKa/7IJQy8rmANGzjYArndhrF+tqyYFIwLPWvN8yIajd69Rek2Eb3R9SY6LFN0I1ajj+8wvnlqXsY6WvEmAtYovFd6jh7kkB0XUbDWXSLDry2CykSecw8P19ynlFLgY1AzQahUju4aZR01Zf9vh8YumsvBJONyfgwTg+20S5Mer6dsnu+aRUc/Fb+x3VtI4SZiwPjyPPle7bxzGFskjzMbWMdh5nAMeuw7vFmXkfhcbsrs8xo7ksDPzicGiArTDdc14JpknNtHCU1t3k7psk4K1kLWzoTC9rH+hvJy3m3TpDxXFDLlGEZJTutS6VBrm6sfyFEvIO56RHRYk4ChcZsZhgm5JICA1OwWy9+ZzCyEc86452UJ10gobU+pnN3pk33jVdQeOzsY4OgxiI47BLLBP1RZkrF+CwI078CA2cxhjC4G36ZBYahGzF+zekeCgiLb/1H+bWGglUXwvoXpDZAMoOyVfDhl6ae1FB/8tIj6kaDSOQx8/x8K6nvbUG1lOaPhLwtdo82DJqGie9QC5FoGfDAZyHP9z+sn0UY+4ROV4VM7pnU93Z73agVDY5jm3tJDzWT64YE9erDkAL25+BLLGPzuD07sW8fzAkaysu4K75PqTLWUsDnIf2cS42IdR06LZgNPVsyntOgLsflCJOQpo2vZaX/e9lGjyHcH2pKYXJQE2oecz5EvIO56RHRaE4qg1CY2QYjdF+gvBpOO7bJj0LColUk8ph5Hs0qr00VFV0i3sHc9AiaE3eSAdvK6ZYcKBm50qt5fWhOSABmnkezQhtzU9Em4h3MTY+gOaG8Fok8Zp5TVDgi3sHc9AiaE8prkchj5jlFhSPiHcxNj6A5obwWiTxmnlNUOCLewdz0CJoTymuRyGPmOUWFI+IdzE2PoDmhvBaJPGaeU1Q4It7B3PQImhPKa5HIY+Y5RYUj4h3MTY+gOaG8Fok8Zp5TVDgi3sHc9AiaE8prkchj5jlFhSPiHcxNj6A5obwWiTxmnlNUOCLewdz0CJoTymuRyGPmOUWFI+IdzE2PKMk4GfKPSlHhiEQeM88pKhwR72BuekRpXlrIPypFuVaTH5v/YiQCnGmGXoo6VxHvYG56iPmPSlFulbtuiPnvRSJAYverQ/Keotwosfu15r8XCQOaE4/hLzEqLFn/P9kre5r/ViSCpI6pEfp3oKhzUOxXvzT/rUiY0JxEiNKCLFWSl05RFVZZaYn5b0TOI6XF+SF/E4o6k8qs/xkSGWhOSFRRUFCgTp065aiwsNCMQggJk+zs7KDnrKSExphEFzQnJGrJyclRderUUTVq1BCNGDFCwggh50ZKSopq2bKl8yzVr1/fjEJIVEFzQioF7dq1cwpW6PTp02YUQohBXl5e0HMzZcoUMwohUQnNCak05Ofnq4kTJzoFbe3atdW0adPMaIRUeXr06KFee+01eU5eeeUVtXHjRhp6UqmgOSGVlmPHjqm3337bMStffPEFC2BSJUFbLZh1/Sx8+umnqri42IxGSKWB5oRUejIzM9UHH3zgFMzvvfeeSk1NNaMRctGxbds29frrrzv/+x07dhSjQkhlh+aEXDSg1qRTp05OQf3hhx+qLVu2mNEIqfTMmDEjqNZwwoQJZhRCKjU0J+Sio6ysTG3atMkpuF9++WW1YMECMxohlQqY79GjRzv/16+++qo6dOiQGY2QiwKaE3LRgzEdatas6RTqLVq04LgOpFKQkJAgNYD6fxefLzn2D6kK0JyQKkNubq50pdQF/VtvvaXi4uLMaIRccDZv3uz0toFiYmLY2JtUKWhOSJUDhfysWbOkWlx/9hk3bpwZjZDzCj5H9u7dO6iWZPXq1WY0QqoENCekynPy5EnVsGFD56Xw+eefm1EIiQjoWVOvXj3nf69v377saUaIojkhxAGfeDB4lX5RYKyIdevWmdEICZuZM2fKZ0X9v4aaO07NQIgfmhNCymHAgAHyuQcvjjfeeEMtX75clZaWmtEIqTAYFG3q1KnO50T8X3E4eULKh+aEkLOAsVICf+ViLJWsrCwzGiEhYBTjZs2aOf87TZo0YfdfQioAzQkhFQRz+zRq1Mh50bRv315ePoSYYC6bzz77zPlf6dq1qxmFEHIGaE4IccHkyZOdFw+0d+9eMwqpYqC3Ddoo6f8JfBZctWqVGY0QUgFoTggJk4MHDwaNSTF27FiOSVFFQCPWXr16OX97DCmfnJxsRiOEnCM0J4R4RGJiourSpYvzosLInpiUkFx8nDhxImjCvWHDhtGQEuIhNCeEeAx6ZXTv3t3plVGrVi1pg0AqP7Nnz3YMSe3atTl4HyERguaEkAiDdgf169d3Xmp9+vQxo5AoBbUhmItJ/+2aN2+u9u3bZ0YjhHgMzQkh54ldu3YFjUTbtm1b+TxAoo+dO3cGTbiHv1VKSooZjRASIWhOCLkAYIh8/eKrW7euio2NNaOQ8wxmqt62bZvzOQ7Ldu3amdEIIecBmhNCLjCTJk2Sdin6hTh9+nRVVFRkRiMRALUhAwcOdIwiPr8tW7bMjEYIOc/QnBASJeTl5al3333XeVGOHDmSvX0iRHx8vGrTpo2T15hHCTUnhJDogOaEkCgDg3nhc4J+cUIwLiR8MAZJYL6i1ooQEn3QnBAS5cTExAS9UDds2MBJCCtIYWGhmjt3rpN3mGzv8OHDZjRCSJRBc0JIJQEv1Q8++MB50TZt2lTGVCGhYORW3Y4H+uKLL1Rubq4ZjRASpdCcEFLJwNgb77zzTlBtQFpamhmtSrJnzx6Z00bnDboA4zMZIaRyQXNCSCVn9OjRMlqpfiHPmTPHjHLRAuMxYMAA597r1aunVqxYYUYjhFQyaE4IuUhAF1jUougXNbrIFhQUmNEuCrKysoIGtKtTp446efKkGY0QUkmhOSHkIgONQGvWrOm8uL/88suLZlK69PR09dZbbzn3hq7XF8u9EUL80JwQcpGDbsl61FOYlu3bt1ea3j4wWvPnz3fMCGYCxvgvhJCLG5oTQqoI5hgfS5cuNaNEFf379w+6XtaQEFJ1oDkhpIqRmJioGjRo4Lz0McFdtIBh+wN7ImEGZ7QvIYRULWhOCKniTJgwIaiG4nx2S8bnpf379zvnfuWVV9SmTZvMaISQKgbNCSFE5pXZuHGjYxLQRqVbt25mNE/57LPPnDFJ0Mvo1KlTHJOEECLQnBBCgti5c6c0PIVpgHlo2bJlSJfkijaoNY87duyYjNaqTRC6A584cSIoDiGE0JwQQgghJKqgOSFh0WZWO/VM7+fVU72eoyiKUi/0ra4GLRtiFhWEnBM0J8QVpWVl6q4O96rrWtxEURQVopqD3zCLDUIqDM0JccVzfV4MKYwoiqIC1XZ2e7PoIKRC0JwQV5iFEEVRlKlHuj9hFh2EVAiaE+IKsxCiKIoy9WCXR82ig5AKQXNCXGEWQhRFUaYe7PKIWXQQUiFoTogrzEKIoijKFM0JcQvNCXGFWQhRFEWZojkhbqE5Ia4wCyGKoihTNCfELTQnxBVmIURRFGWK5oS4heaEuMIshCiKokzRnBC30JwQV5iFEEVRlCmaE+IWmhPiCrMQos6fwH2dHgoJd6v7Oj+kOsztHBLuVgt3LVI3tLolKOx+6xyg6HSR2hu/T9UeVifkuO9SXlFeSJgOP5J8NCScih7RnBC30JwQV5iFEHX+BGBOHu/xtHq0+xOq7qj66vWhb6kbWt6ivpjUSF3f4mZ1V4f7ZB3xX+hXXX02oYF6suczsl2t/T3q43GfqVpDass2hhiP2b/SPrblzer9UR+IeXhr+Dtyjk+suEgbcR/r8ZSV1hfO9hvWeW9qdZv6aOwn6rm+L6mX+r+s0vMyVKPJTdSL/Wo416zNCdanbJga9D/02uA31Ntfv+ds39PxAbm+90bWk219H/rcuF8d/sGYj2X92T4vyr6bWt8m27WGvClLXFfgdVDnVzQnxC00J8QVZiFEnT8BmJOWM9uoI0lH1c2tb3f+JifTTqlZW+eoYynH1dzt8yxjUkOtO7xeDEt2Qba6sdWtEhfGAzPI4phHuj2uxq4ZL+swGvlF+RKvrKxMXi7FJcWijUc3qdLSUieNB6x9y/YuVxPWT7LMx8PONcRnJkicwGsONCf6Hh7u+pgqOl2spm+eqTrP6yrnw3UCmK472t3txNXLW9tWCwqPz0hQJ1NPyrEwTODeTg+ohbsWq7nb5qm7LZOmj6fOv2hOiFtoTogrzEKIOn8C2pw0m9bcCcPyS2u7pLREtp/o+bTUQBSXnFYFxQWiZ3o/rz6f0FDtjdsrL3QYDNOcHEo6LOtIB8u49Hjn745jdFqvDqol5uTO9vcEXUNFzcmtbarJEp96dJqo1YE5Mu8Xy6ErhqujyUedbQBzApKykpywd0e8L+ZE1+7o+NT5F80JcQvNCXGFWQhR509Am5MmU5o5YYH7tbFALQJe9nWGv+sYmXk7Fqg3h70t8VrMaK0e7Pqo2nxsi3pt8Ou2OUk8JPFMc9J7cV9Zvj/6A/X1ylHqno73izmBoQi8BtTawCBo0wJpc4LzHk89oUrLSiU8Nj1OxWXEq3es+GsOrXXS6Tq/u3ymCUx30LKh8rkptzDXCYc5Qc0LeGdEXVne1vZOMSeB+aHXqfMrmhPiFpoT4gqzEKIoijJFc0LcQnNCXGEWQhRFUaZoTohbaE6IK8xCiKIoyhTNCXELzQlxhVkIURRFmaI5IW6hOSGuMAshiqIoUzQnxC00J8QVZiFEURRliuaEuIXmhLjCLIQoiqJM0ZwQt9CcEFeYhRBFUZQpmhPiFpoT4gqzEKIoijJFc0LcQnNCXGEWQhRFUaZoTohbaE6IK8xCiKIoyhTNCXELzQlxhVkIURRFmaI5IW6hOSGuMAshiqIoUzQnxC00J8QVZiFEURRliuaEuIXmhLjCLISo6Nf8HQtCwgI1aNmQkDCo+4Ke6qZWt4WER1JDlg8NCVu0a3FIWHnaF78vaLvWkDdD4lDnRzQnxC00J8QVZiFEeaM72t2lXuhXQz1gFeo6rN/SAepI8lF1V4f7ZPv6ljcHHXN9i5vVF5Maqc3Htsp2n8X9nH13d7hfjEXX+T3UW8PfUd/uXS7hMftXqlva3CHr1drfI8uNRzeFXM+DXR5V93V+KCRcp7M3fq+6s8O9sv7x+M9k+en4BrK8oeUt6v1R9WVpHv9d2nJ8q7qt7Z0q5sBKJwzXjeWsrbOD4u6J2xu0vWJ/jHqy17Oqt3X/j3R7wgnvMLeTOpBwQNbHrBkvefvxOPta72h3txx3T8f71eqDa4LSo8IXzQlxC80JcYVZCFHhS7+EYRoe6vqoE/5S/5fVwcSDzvae2D3qjaF11PN9X5LtOl+/q57o8bTEQa1BYNz+3w6UJQwDTAxe0ohzKOmQ6jKvm5q0fooa+O1giTNl07SQa1p9aG1IWKBgJlYeWKWGx4x0amaW7vnWurbqso59j3V/0omPc5vqOLez7Luv04OqwcSGsj5y1WjZ/jpmhJqxZaaEtZnVTpYjVo4SA7bXOhZGZnfsbvXygNfU3ZbBgNG6r9NDqtuCnhIXRu61wa+rXad2OWmsP7LBOTfM25LdS2TfxA2TQ+6PCk80J8QtNCfEFWYhRIWvhb7PFusPb1A3trpV1pfvW6HutV7SA5fZBuKJns/IErUcn/te5LrGQ9cGoBZAp9l/qW1OdluGBstXB9WS5aOWYVjjMx5rD62zzNBjjjkKVM3BtUPCILz0UTtRf/RHatKGKb5z7FbP9XlR1jcd2+zUXkzZGGp6yhPus8fCXqqzZZreG1lPDYv5Ws6zP2G/7Ndm7EjyEfV07+fE+Ohjq/d/xTrf41L7AXP37d5lEv7FpMbqrg73iknDZyGkB3MSWJvTbk4HWX409pOQa6LCE80JcQvNCXGFWQhR4etw0uGQsAupj8Z9GhIG6c82FHU20ZwQt9CcEFeYhRAVvgLbSUSzAj85UdSZRHNC3EJzQlxhFkIURVGmaE6IW2hOiCvMQoiiKMoUzQlxC80JcYVZCFEURZl6sOujZtFBSIWgOSGuON+DclEUVfn0Qr/qZtFBSIWgOSGuWHt4XUhBRFEUFajS0lKz6CCkQtCcENfM2fZNSGFEURQFHUg4aBYZhFQYmhMSNnlFeSojL5OiKEoVnS4yiwhCzhmaE0IIIYREFTQnhBBCCIkqaE4IIYQQElXQnBBCCCEkqqA5IYQQQkhUQXNCCCGEkKiC5oQQQgghUQXNCSGEEEKiClfmBEMSHz9+XJ08eZIKU8jH06dPm1lMCCGEVFlcmZOEhARVVlZmBhOXxMfHm0GEEEJIlcWVOcHLtKqak+XLl5tBYRMXF2cGEUIIIVWWsMzJ4aTT6v++SKywnuqdaialmjdvrrp3767+/e9/q6VLl5q71XXXXWcGBXHzzTc765dffrnq27ev+utf/+qPECbVqlUL2r7llluCtr2A5oQQQgjxExXmRHPttdeq3NxcWd+8ebMstTnR4Xfeeacd2ceMGTOc9T//+c9yXJ06daRdjDYS9erVU127dlVHjhwRA1NYWOiYmr/85S9yL1lZWSotLU21b99eDA5AvDOZkwMHDki7kf/+97+y/aMf/UiOzcvLc6YK/973vnfWNiU0J4QQQoifqDInV1xxhWrdurVq1KiR6tatm4Rpc3LllVeqfv36qQceeMCJbwKjAe644w6VnZ2t/v73v6u77rpL3Xffferqq6+WfThfoDmBoYHBQDzoq6++knPjWnbt2lWuOcG9f/LJJ6pPnz5q0qRJasCAAXK+Vq1aqVtvvdVJC3z/+98POr48aE4IIYQQP1FhTgoKCtSiRYvUq6++qp5//nmpeWjSpIns/9vf/ib777//fgn/4Q9/6BxbVBQ8Nbc2JwA1Fz/72c/kmI0bN0oNy8qVK9WvfvUrMScvvvii1MZccsklEn/v3r0Sd//+/VKLArOB6/nnP/8p59fAnBQXF8uxPXr0EHOC7d/+9reyf9asWWrfvn2SFqA5IYQQQs6NsMxJWm6p6jI/p8IaszbfTCosXnvtNTPorHTq1EnMiZfs2LFD1a5d2wyuMDQnhBBCiJ+wzAnxBpoTQgghxA/NSRRAc0IIIYT4oTmJAmhOCCGEED9hmZNTOSnq0bktK6xPVg01k1I5OTnq17/+tapbt65so3tuJJg+fbr6yU9+opo1a2buCuLxxx83g87IRx99pG644QancS56F6FnEBrRnjp1ShrHar6rpxHNCSGEEOInLHNyMDNO/frrVyusB+d8ZSalrrnmGlmWlJSoTZs2qT/+8Y9q1KhRKikpSd17772yLzY2VtWvX1/FxMRIF96mTZs6x8MMoPsxeudgMLf//Oc/QQ1eV69eLUuYk6NHj6oPP/xQzAC6C/fq1Uv2YWwUdAHOz89XP/3pT1WNGjXkepB29erVJQ66FN9zzz0SB2YE5gMNYXHNAPkxYsQIZ/0Xv/hFiDl57rnnyq1xojkhhBBC/FxwczJt2jQZh2T79u2yrWtOMEYJBi9DbYM5OR4MQWpqqpgI8Kc//cmZjBD84Q9/cOKiyzCAOUHX35///OdiGHDeqVOnqp07d0p3YYB70jUnMCPY/v3vfy/bl156qSwxki2ACUJtCUxIy5YtJUx3SwZffvlliDlZt26dGCQTmhNCCCHEzwU3JxrUiABtTnSNyu233+6YDkw4uHjxYpnfBgbl7rvvlnAYBpgTc9wT0LhxY1nqmhOwdetWSWPLli0yBgrAPc2fP1898cQTso3RaoEeOwWDwAFtZAJBTc0LL7wgg7JpfvnLX4aYk7Fjx6rk5GRnW0NzQgghhPi54OZk6NChMkorRlkFMAEjR46UTy0YFh5tUrQ5AQ8//LCYAJgTGJJ//etfqmbNmnI9n332maTVrl07J742LIHmBLz//vvyqQigBgafkDCYGj4d4VNOSkqKGBM9kqw2J/jEhHN26dJFpaenOyPQ6podfArCQG/Hjh0Tc4L2NP/7v/8r+/DJqjxoTgghhBA/YZmTvNOFalnszgprc/IhM6mwQLuQr7/+Omhk2PIor0blbOATDNq+vPnmm+auswJDpc2WBuYFaZYHzQkhhBDiJyxzQryB5oQQQgjxQ3MSBdCcEEIIIX5oTqIAmhNCCCHET1jmJPVEnmpTLabCGv7OVjMpmZVYz+B7+eWXyxJdg03Q5RegEaw5cV958QM5dOiQ9PQBaPRaETCeybBhw2TQNjSehb6LXbt2Ob1+kD5mIta9h9Al+vXXX1eZmZnq2WeflfDLLrss6HiaE0IIIcRPWOYk5Vie+ur6ZRXWoFqbzaTEnAwcOFBe6rr3THlmQ3fxRTfguXPnqqefflp6zYDA+EgHPWXuuOMO9dhjj6lBgwapRx99VD355JNqw4YNYhIwwNstt9zidDO+/vrrRQcPHnTSadGihSwDR5TFIGpPPfWUevfdd6WLMM6BnjpvvfWWuv/++1W/fv3UlClTZAwWDP4Gc/Lqq6/KsbVq1XLMCa4FSw3NCSGEEOInKszJTTfdpNq2beuMcVKeOYHBAL/97W+l5qRv376qffv2ElaeOVm/fr3q1KmTDKIWWHMCc4LuvuDGG2+Upd4ONCKPPPKIE6YF84IuxBghFiZk8uTJkg+BNSe6VgSDs8GcoPswuimjdkibk1mzZomB0dCcEEIIIX6iwpzgJT579uwzmhPEwbgna9eulWHkAUZhBYHxMQYKzIke4h7D0aOmBOOTAJgTjIuCwdB+97vfSdiDDz4oywYNGtiJKL9RCTQsL7/8siwxyizGQQEYzG3//v1q4cKFso3l7t271YoVK4JqToA2Jxi1Ft2gNTQnhBBCiJ8Lbk703DcAg5oBjBGCoebHjRvn7AN6LhyMI4JPKNnZ2bI9ZMgQWaI2BWFZWVlq0aJFavTo0SKAT0eoQdHtVcaMGSPpAAxjD2AoNBkZGRJn1apVThhGlB0+fLhaunSp1MQgzQULFsg+hGuDooEBmTdvnrONGhPkmzkYG80JIYQQ4icsc3Kxs3LlSjMoItCcEEIIIX5oTqIAmhNCCCHED81JFEBzQgghhPiJKnOCSffcgnFJTNC7JrDLbkVZs2aNGaT27NljBnkGzQkhhBDiJyxzcjp5vzrV8HsVVmKf28ykpLeOpmfPnjIWCcYQ+eorewZjzD7cpEkTWUd3XDRG7d27t3MMeuWgx4xuTIuJAHWa6EocOGAbZjQGHTt2VP/+97+d+N26dZP1xMRE6QH0wAMPyPb27dvV2LFjZb1Ro0ayRFfizp07y7pX0JwQQgghfqLCnKCLLWYAvvnmm8UsQHrUWN2jBgOmpaWlyZgkMChYf+edd2QfugefOHHCSVNjmhN04c3NzVXXXHONDLo2ceJEGdQNxyPeFVdcIfFgTjAOCcZewXgpixcvFnOiB4vzGpoTQgghxE9UmBONNicwHpqrr75auhVXr15dwrF++PBhqVHBMPEamJOCggKpERk8eLCElWdOMLLsunXrxJxgYDf9eQrH161bV9ZhTjDuCuJgFFh0E9Y1JzgeQ9J7Cc0JIYQQ4ifqzQmGin/ooYfKNSenT5+WYeNfeuklMRcYVwTGQX+WKc+caGA8AM6JEWpB9+7dJT19PAZQw/D0GAEW5mT8+PEy2uutt97qpOMFNCeEEEKIn7DMSWluisqc36zCylkz0EyKKJoTQgghJJCwzAnxBpoTQgghxA/NSRRAc0IIIYT4oTmJAmhOCCGEED9hmZOEzAT15rC3K6y2s9qbSUmD2F/96lfqo48+OuuAaVdddZUZ5AnPPPOMGRSCHkclEtCcEEIIIX7CMifHUo6r61rcVGHVGlLbTCqot85vfvMbGVekTp06ql69ehJ2yy23SNdgzDT8f//3f6qoqEj1799fNWjQwDkOcTEjMXrUoMcOjnnqqaeCeupceeWVMnvxzp07ZaZgGAIcg/FU0FsHswu///776vnnn1eXX365HHP77bfLEr18MLYKeutEApoTQgghxE9UmRN00a1WrZr65JNPRODDDz909sOcwHx8/PHHKjk52Qn/3e9+J0vUwGA/TAhqOjIyMiQcNTIffPCBrF966aUh5kTXnMCcgNatW8tgbYHmhDUnhBBCyPkhqszJZZddFvKJBYOeaWBOAM6NUWU1v/zlL2X5hz/8QcwJhpwPNCeIf9tt9hgrqFVZtWqVzLtTu3ZtMSc6LZgT1NDUqlVLtq+99lpZwpzotCIBzQkhhBDiJyxzciL1hKrW/p4K690Rds1EtKJrTs43NCeEEEKIn7DMycWG/pR0vqE5IYQQQvzQnEQBNCeEEEKIH1fmBO0y0KYD7Tuo8IQZkSPZnoUQQgipbLgyJyA7O1slJCRQYQpGjxBCCCF+XJsTQgghhJBIQHNCCCGEkKiC5oQQQgghUQXNCSGEEEKiCpoTQgghhEQVNCeEEEIIiSpoTgghhBASVdCcEEIIISSqoDkhhBBCSFRBc0IIIYSQqILmhBBCCCFRBc0JIYQQQqIKmhNCCCGERBU0J4QQQgiJKmhOCCGEEBJV0JwQQgghJKr4//TEcIG9CFm8AAAAAElFTkSuQmCC>
+The primary metric for evaluating a flip investment is the Internal Rate of Return (IRR), which represents the discount rate at which the net present value of all cash flows equals zero. For real estate flips with holding periods measured in months, IRR is computed from monthly cash flows and then annualized. The formula converts monthly IRR to annual: `annual_IRR = (1 + monthly_IRR)^12 - 1`.
+
+Complementary metrics include the Multiple on Invested Capital (MOIC), which measures total cash returned divided by total equity invested; Return on Equity (ROE), which measures profit divided by maximum equity exposure; and Gross Margin, which divides profit by total development cost. Each metric captures a different dimension of the investment: MOIC reflects total return, ROE reflects capital efficiency, and Gross Margin reflects cost control.
+
+Leverage, the use of debt to finance part of the acquisition and renovation, amplifies both returns and risk. A mortgage covering a portion of the purchase price reduces the equity required upfront, increasing IRR and ROE when the deal is profitable. However, interest payments during the holding period reduce absolute profit. Financial models must account for the monthly cost of both acquisition debt (mortgage) and renovation debt (capex financing), typically modeled as interest-only during the holding period with full principal repayment at exit.
+
+## Notary and transaction data
+
+Spain's notary system, administered by the Colegio General del Notariado, records the closing price of every real estate transaction. These transaction prices differ from the asking prices published on portals. The gap between asking and closing represents the negotiation margin, a critical piece of market intelligence for investors.
+
+The Colegio General del Notariado makes aggregated transaction data publicly available through an ArcGIS FeatureServer API hosted at penotariado.com. The data is organized by geographic level, with Layer 4 providing postal code granularity. For each postal code, the API returns the average transaction price per square meter, average total transaction price, average property surface area, and transaction counts. These statistics can be filtered by construction type (nueva, segunda mano, or all) and property class (pisos, casas, or all), yielding nine filter combinations.
+
+What makes this data useful is that it represents actual transaction prices, not aspirational asking prices. Comparing portal asking prices against notary closing prices by district shows which areas have the largest negotiation margins and where asking prices most diverge from what buyers actually pay.
+
+## Analytics and decision support systems
+
+Dashboards in real estate investment work best when they answer specific questions rather than just displaying numbers. Where are the best opportunities? How much room is there to negotiate? Is the market pricing a property fairly? These are the questions an analyst has open in their head when looking at deal flow.
+
+Opportunity scoring algorithms rank geographic areas by combining signals: entry price, renovation upside, model-predicted undervaluation. Averaging the ranks across these dimensions produces a single score per district. The advantage of this approach is balance. It avoids fixating on a single metric.
+
+Comparing data sources against each other is where the real insights come from. Asking prices versus notary closing prices reveal negotiation margins. ML predicted prices versus asking prices flag systematic mispricing. And "a reformar" prices versus "buen estado" prices in the same district quantify what renovation is actually worth.
+
+## Gap in the literature
+
+Existing academic work and commercial products tend to address individual components of the real estate investment pipeline. Automated Valuation Models focus on price prediction. Portal aggregators focus on data collection. Financial modeling tools focus on investment returns. Dashboard products focus on market visualization.
+
+| Capability | IntellCRE | HouseCanary | Cherre | ATTOM | CoreLogic | Quantarium | CapReSol |
+|---|---|---|---|---|---|---|---|
+| Multi-source scraping | No | No | Partial | No | No | No | Yes |
+| ML valuation | Yes | Yes | No | Yes | Yes | Yes | Yes |
+| Notary/transaction data | No | Yes | Partial | Partial | Yes | Partial | Yes |
+| Financial modeling | Partial | No | No | No | No | No | Yes |
+| Analytics dashboard | Partial | Yes | Yes | Partial | Yes | No | Yes |
+| Madrid-specific | No | No | No | No | No | No | Yes |
+
+*Table 1.* Capabilities of commercial competitors compared to CapReSol.
+
+No published system combines multi-source portal scraping, ML valuation, official notary closing price data, financial modeling with leverage, and an opportunity-focused analytics dashboard in a single production application. The closest commercial products, HouseCanary and CoreLogic, operate only in the United States and focus on valuation rather than the full investment pipeline.
+
+The numbers reflect this. Ninety-two percent of firms report piloting AI tools, but only 5 percent have achieved their stated goals, largely because of legacy infrastructure and fragmented data ingestion (v7 Labs, 2026). Most existing solutions handle the analysis stage but skip the messy work of collecting, normalizing, and deduplicating data from unstructured sources.
+
+This thesis fills that gap by building a system that covers the full pipeline, from raw portal HTML to investment decision metrics, for the Madrid residential market.
+
+# **Method**
+
+## **Research Approach**
+
+This thesis follows a Design Science Research methodology. The core contribution is a software artifact, the CapReSol system, designed to solve an identified real-world problem. The artifact is evaluated through two mechanisms: quantitative metrics (ML model performance, dataset coverage) and qualitative feedback from five real estate professionals in Argentina and Spain.
+
+The development followed an iterative approach, building each system capability incrementally: database schema first, then data collection, then machine learning, then financial modeling, then analytics, and finally authentication and deployment. Each iteration was tested against production data before moving to the next component.
+
+## **System Requirements**
+
+### **Functional Requirements**
+
+| ID | Requirement | Description |
+|---|---|---|
+| FR1 | Multi-source scraping | Collect listings from Idealista (API + HTML), Redpiso, Fotocasa, Pisos.com |
+| FR2 | ML valuation | Predict property price from physical and locational features |
+| FR3 | Notary integration | Ingest closing price data from penotariado.com for 55 postal codes |
+| FR4 | Financial analysis | Compute Fix and Flip metrics (IRR, MOIC, ROE, Gross Margin) with leverage |
+| FR5 | Analytics dashboard | Surface district-level opportunities with upside, negotiation, and ML charts |
+| FR6 | Multi-user auth | JWT-based login with bcrypt password hashing for 6 user accounts |
+
+*Table 2.* Functional requirements.
+
+### **Non-functional Requirements**
+
+**Security.** All API endpoints except login are protected by JWT authentication. Passwords are hashed with bcrypt. Tokens expire after seven days.
+
+**Availability.** The system auto-deploys on push to the main branch. Railway restarts the backend container on failure. Vercel serves the frontend from a global CDN.
+
+**Performance.** ML model artifacts are cached in memory using Python's `lru_cache` decorator, so inference after the first request avoids disk reads. The analytics endpoint returns all 13 data structures in a single response to minimize round-trips.
+
+**Data integrity.** PostgreSQL provides ACID compliance. URL uniqueness constraints prevent duplicate listings. Composite unique keys on notary records prevent duplicate postal code entries.
+
+## **Technology Selection**
+
+| Layer | Technology | Justification |
+|---|---|---|
+| Backend API | FastAPI (Python) | Native ML ecosystem (scikit-learn, pandas, numpy), async support, automatic OpenAPI docs, Pydantic validation |
+| Database | PostgreSQL 16 | ACID compliance, robust upsert support (ON CONFLICT), UUID primary keys, JSON column type |
+| ORM | SQLAlchemy | Python-native ORM, migration support through Alembic, compatible with FastAPI dependency injection |
+| Migrations | Alembic | Schema versioning, autogenerated migration scripts, rollback support |
+| Frontend | Next.js 14 (React) | App Router for file-based routing, server-side rendering, Tailwind CSS integration |
+| Styling | Tailwind CSS | Utility-first CSS, rapid UI development, consistent design |
+| Charts | Recharts | React-native charting, bar/line/pie/area chart types, responsive design |
+| ML framework | scikit-learn | GradientBoostingRegressor, StandardScaler, cross_val_score, established library |
+| ML serialization | joblib | Efficient serialization of scikit-learn models and numpy arrays |
+| Financial math | numpy-financial | IRR computation from cash flow arrays |
+| Backend hosting | Railway | Docker containers, managed PostgreSQL, auto-deploy from GitHub, SSL termination |
+| Frontend hosting | Vercel | Optimized for Next.js, global CDN, auto-deploy from GitHub |
+
+*Table 3.* Technology stack.
+
+The backend runs as a single FastAPI service. An earlier design considered separating routing and coordination into a Node.js layer with FastAPI handling only ML inference, but this was abandoned in favor of a unified Python service. FastAPI handles all API routing, authentication, database operations, scraping orchestration, ML inference, financial computation, and analytics aggregation. Consolidating into a single service reduced operational complexity and eliminated inter-service HTTP latency.
+
+Uvicorn is the ASGI server that runs the FastAPI application. It handles concurrent HTTP requests and supports the proxy headers configuration that Railway's SSL termination layer requires.
+
+## **Data Sources**
+
+| Source | Method | Auth | Approx. Volume | Key Fields |
+|---|---|---|---|---|
+| Idealista API | REST API (OAuth2) | Client ID + Secret | ~500/cycle (rate limited) | All structured: price, size, rooms, floor, amenities, condition |
+| Idealista HTML | Firecrawl (JS render) | Firecrawl API key | ~15,000 listings | Regex-parsed from markdown: price, size, rooms, condition |
+| Redpiso | JSON API | None (public) | ~1,300 listings | Structured: price, size, rooms, district, broker info |
+| Fotocasa | Firecrawl (JS render) | Firecrawl API key | ~9,000 listings | Regex-parsed from markdown: price, size, rooms, condition |
+| Pisos.com | Firecrawl (JS render) | Firecrawl API key | ~10,500 listings | Regex-parsed from markdown: price, size, rooms, district |
+| Notary (penotariado) | ArcGIS FeatureServer | None (public) | 55 postal codes x 9 combos | Avg price/sqm, avg total price, avg surface, transaction counts |
+
+*Table 4.* Data sources.
+
+## **Development Process**
+
+Development proceeded through eight sequential phases:
+
+1. **Database schema design.** Defined six tables (users, deals, predictions, financial_analyses, notary_stats, messages) with SQLAlchemy models and Alembic migrations.
+2. **Idealista API scraper.** Built OAuth2 authentication flow, pagination, field mapping, and district normalization.
+3. **Additional scrapers.** Added Redpiso (JSON API), Fotocasa (Firecrawl), Pisos.com (Firecrawl), and Idealista HTML (Firecrawl) with unified ingestion logic.
+4. **ML training pipeline.** Implemented feature engineering, log-transform, Gradient Boosting training, five-fold cross-validation, and artifact management.
+5. **Fix and Flip financial model.** Ported from Excel reference model to Python, implementing monthly equity cash flows with leverage and IRR computation.
+6. **Notary data integration.** Built ArcGIS API client for all nine filter combinations across 55 postal codes.
+7. **Analytics dashboard.** Implemented backend aggregation endpoint with 13 data structures and frontend with 10 chart sections.
+8. **Authentication and deployment.** Added JWT auth with bcrypt hashing, configured Railway Docker deployment, Vercel frontend, and CORS for cross-origin access.
+
+# System architecture and design
+
+## High-level architecture
+
+The system follows a three-tier architecture deployed across two cloud services:
+
+```
+┌──────────────────────────────┐
+│        Frontend (Vercel)     │
+│   Next.js 14 + Tailwind CSS │
+│       + Recharts             │
+│   https://cap-re-sol.vercel  │
+│            .app              │
+└──────────────┬───────────────┘
+               │ HTTPS (REST/JSON)
+               │
+┌──────────────▼───────────────┐
+│      Backend (Railway)       │
+│   FastAPI + Uvicorn          │
+│   7 API routers              │
+│   ML inference + scraping    │
+│   https://capresol-production│
+│        .up.railway.app       │
+└──────────────┬───────────────┘
+               │ psycopg2
+               │
+┌──────────────▼───────────────┐
+│    Database (Railway)        │
+│   PostgreSQL 16              │
+│   6 tables, UUID PKs        │
+│   postgres.railway.internal  │
+└──────────────────────────────┘
+```
+
+*Figure 1.* Three-tier deployment architecture.
+
+The frontend communicates with the backend exclusively through HTTPS REST calls. The backend connects to PostgreSQL using psycopg2 through SQLAlchemy's ORM layer. Both the frontend and backend auto-deploy from the main branch on GitHub: Railway rebuilds the Docker container for the backend, and Vercel rebuilds the Next.js application for the frontend.
+
+## Backend architecture
+
+The FastAPI application is structured around seven router modules, each handling a distinct functional area:
+
+```
+main.py (FastAPI app)
+├── /auth      → Login, JWT issuance
+├── /deals     → GET listings, POST scrape, POST predict, DELETE prediction
+├── /analyses  → CRUD for Fix & Flip financial analyses
+├── /analytics → GET dashboard aggregations (13 data structures)
+├── /ml        → POST retrain model
+├── /notary    → POST scrape notary data, GET query
+└── /messages  → CRUD for incoming messages
+```
+
+CORS middleware is configured from the `ALLOWED_ORIGINS` environment variable, accepting requests from both localhost (development) and the Vercel domain (production) with `allow_credentials=True` to support cookie-based session management.
+
+Authentication is enforced through a `get_current_user` dependency that validates the Bearer JWT token on every protected endpoint. The only unprotected endpoints are `POST /auth/login` and `GET /` (root health check).
+
+Database sessions are managed through a `get_db` dependency that yields a SQLAlchemy session and ensures cleanup after each request. Configuration is loaded from environment variables through a Pydantic `BaseSettings` class, which handles type conversion (including the `postgresql://` to `postgresql+psycopg2://` transformation required by Railway's database URL format).
+
+## Database schema
+
+The database consists of six tables with UUID primary keys and referential integrity constraints:
+
+```
+┌─────────────┐     ┌─────────────────────────────────────┐
+│   users      │     │              deals                   │
+├─────────────┤     ├─────────────────────────────────────┤
+│ id (UUID PK)│     │ id (UUID PK)                        │
+│ username    │     │ message_id (FK → messages, nullable)│
+│ hashed_pwd  │     │ address, city, country               │
+│ created_at  │     │ property_type, size_sqm              │
+└─────────────┘     │ bedrooms, bathrooms, floor           │
+                    │ asking_price, currency                │
+┌─────────────┐     │ url (UNIQUE)                         │
+│  messages    │     │ broker_name, broker_contact           │
+├─────────────┤     │ district, zone, condition             │
+│ id (UUID PK)│     │ orientation, postal_code              │
+│ channel     │     │ storage_room, terrace, balcony        │
+│ source_id   │     │ elevator, garage                      │
+│ sender      │     │ listed_date, created_at               │
+│ received_at │     └───────────┬─────────────────────────┘
+│ raw_subject │                 │
+│ raw_body    │     ┌───────────▼─────────┐
+│ attachments │     │    predictions       │
+│ created_at  │     ├─────────────────────┤
+└─────────────┘     │ id (UUID PK)        │
+                    │ deal_id (FK → deals) │
+┌───────────────┐   │ predicted_price      │
+│ notary_stats  │   │ model_version        │
+├───────────────┤   │ created_at           │
+│ id (UUID PK)  │   └─────────────────────┘
+│ postal_code   │
+│ construction  │   ┌─────────────────────────┐
+│ _type         │   │  financial_analyses      │
+│ property_class│   ├─────────────────────────┤
+│ notary_price  │   │ id (UUID PK)            │
+│ _sqm          │   │ deal_id (FK, nullable)  │
+│ notary_avg    │   │ name                     │
+│ _price        │   │ [16 input fields]        │
+│ notary_avg    │   │ [13 output fields]       │
+│ _surface      │   │ created_at               │
+│ notary_txns   │   └─────────────────────────┘
+│ notary_total  │
+│ scraped_at    │
+│ UNIQUE(postal │
+│ _code, type,  │
+│ class)        │
+└───────────────┘
+```
+
+*Figure 2.* Entity-Relationship diagram.
+
+| Table | Records | Key Constraints | Purpose |
+|---|---|---|---|
+| users | 6 | username UNIQUE | JWT authentication |
+| deals | 3,195 | url UNIQUE | Property listings from all sources |
+| predictions | variable | deal_id FK | ML price predictions per deal |
+| financial_analyses | variable | deal_id FK (nullable) | Fix and Flip analysis results |
+| notary_stats | up to 495 | (postal_code, construction_type, property_class) UNIQUE | Notary closing price aggregates |
+| messages | variable | — | Raw incoming messages (WhatsApp, email) |
+
+*Table 5.* Database tables summary.
+
+The deals table uses a unique constraint on the `url` column to enable upsert operations. When a scraper encounters a listing that already exists in the database, the `ON CONFLICT DO UPDATE` clause updates specific fields rather than rejecting the insert. This design allows re-scraping the same portal pages without creating duplicates while still capturing price changes and newly available data.
+
+## Authentication system
+
+Authentication follows a standard JWT flow:
+
+```
+Client                          Server
+  │                               │
+  │  POST /auth/login             │
+  │  {username, password}         │
+  │ ─────────────────────────────>│
+  │                               │  verify bcrypt hash
+  │                               │  generate JWT (HS256)
+  │  {access_token, token_type}   │  7-day expiry
+  │ <─────────────────────────────│
+  │                               │
+  │  GET /deals/                  │
+  │  Authorization: Bearer <jwt>  │
+  │ ─────────────────────────────>│
+  │                               │  decode JWT
+  │                               │  lookup user in DB
+  │  [deals data]                 │  return data
+  │ <─────────────────────────────│
+```
+
+*Figure 3.* Authentication sequence diagram.
+
+Passwords are hashed using bcrypt with automatic salt generation. The JWT payload contains only the username and expiration timestamp, signed with an HS256 secret stored as an environment variable. User accounts are seeded automatically on each deployment from the `USERS_CONFIG` environment variable, using an idempotent script that skips existing usernames.
+
+On the frontend, the JWT token is stored in both localStorage (for API calls) and an HTTP cookie (for the Next.js middleware to check on server-side route changes). When a 401 response is received, the token is cleared and the user is redirected to the login page.
+
+## Deployment architecture
+
+```
+GitHub main branch
+       │
+       ├──── push triggers ────► Railway
+       │                         ├── Docker build (backend/Dockerfile)
+       │                         │   └── python:3.11-slim
+       │                         │       ├── alembic upgrade head
+       │                         │       ├── python -m scripts.seed_users
+       │                         │       └── uvicorn app.main:app
+       │                         │           --host 0.0.0.0
+       │                         │           --proxy-headers
+       │                         │           --forwarded-allow-ips='*'
+       │                         │
+       │                         └── PostgreSQL 16 (managed)
+       │                             └── postgres.railway.internal
+       │
+       └──── push triggers ────► Vercel
+                                 └── Next.js 14 build
+                                     └── NEXT_PUBLIC_API_URL
+                                         = Railway HTTPS URL
+```
+
+*Figure 4.* Deployment pipeline.
+
+The `--proxy-headers` and `--forwarded-allow-ips='*'` flags on uvicorn are required because Railway terminates SSL at its edge layer and proxies requests to the container over HTTP. Without these flags, FastAPI's automatic trailing-slash redirects would generate `http://` URLs, causing mixed content errors in the browser.
+
+The frontend's API client forces HTTPS on the base URL in production to prevent mixed content blocks, but skips this enforcement for localhost during development.
+
+# Data collection pipeline
+
+## Multi-source scraping architecture
+
+The system collects property listings using three distinct scraping strategies, selected based on each portal's technical constraints:
+
+**Strategy 1: REST API (Idealista).** The Idealista API provides structured JSON responses through an OAuth2 authentication flow. The system obtains an access token using client credentials, then paginates through listing results at a rate of one request per 1.1 seconds to respect the API's throttling limits. Each response contains up to 50 listings with structured fields for price, size, rooms, floor, amenities, condition, and geolocation. The API is rate-limited to 100 requests per month, making it the highest-quality but most constrained data source.
+
+**Strategy 2: JSON API (Redpiso).** Redpiso exposes a public JSON endpoint at `redpiso.es/api/properties` that requires no authentication. The system paginates through results in batches of 50, extracting structured property data including district, quarter (zona), property type, price, bedrooms, bathrooms, and broker contact information. This source provides clean structured data but has limited coverage of approximately 1,300 listings and does not include amenity details (elevator, garage, terrace).
+
+**Strategy 3: JavaScript-rendered HTML via Firecrawl (Idealista HTML, Fotocasa, Pisos.com).** Three portals render their content through JavaScript, making traditional HTTP scraping ineffective. The system uses Firecrawl, a web scraping service that renders pages through headless browsers and returns clean markdown. The returned markdown is then parsed using regular expressions to extract property attributes.
+
+Each Firecrawl-based scraper has specific parsing logic:
+
+- **Idealista HTML** uses a 3,000-character context window after each listing title to extract features, with a nested 1,200-character sub-window for the "Caracteristicas basicas" section. Fallback regex patterns handle variations in bathroom count, floor level, and orientation formatting.
+- **Fotocasa** handles the portal's dual-price format (where full and reduced prices may appear together) by taking the first price value. A structured "Caracteristicas" section is parsed for condition, elevator, and orientation.
+- **Pisos.com** extracts the district from parenthetical location strings in the format "Barrio (Distrito District. Madrid Capital)" and uses a 200-character window before each title for price extraction and a 400-character window after for feature extraction.
+
+| Source | Strategy | Auth | Rate Limit | Volume | Amenity Data | Condition Data |
+|---|---|---|---|---|---|---|
+| Idealista API | REST API | OAuth2 | 100 req/month, 1/sec | ~500/cycle | Yes | Yes |
+| Idealista HTML | Firecrawl | API key | Firecrawl limits | ~15,000 | Partial | Yes |
+| Redpiso | JSON API | None | None observed | ~1,300 | No | No |
+| Fotocasa | Firecrawl | API key | Firecrawl limits | ~9,000 | Partial | Yes |
+| Pisos.com | Firecrawl | API key | Firecrawl limits | ~10,500 | Partial | Yes |
+
+*Table 6.* Scraping strategy comparison.
+
+## Data normalization
+
+Raw listing data from each portal must be transformed into a canonical schema before storage. Two normalization steps are critical: district normalization and postal code extraction.
+
+**District normalization.** Madrid is divided into 21 administrative districts, each containing multiple barrios (neighborhoods). Portals refer to locations using barrio names, district names, or variations of either. The `normalize_district()` function maps approximately 150 barrio name variants to 21 canonical district names.
+
+The algorithm first attempts an exact lookup in a dictionary of barrio-to-district mappings (case-insensitive). If no exact match is found, it performs a partial match, checking whether any known alias is contained within the input string, preferring longer matches to avoid false positives. A blacklist filter rejects invalid entries such as "distrito unico." Locations outside Madrid's 21 districts return `None` and the listing is excluded from the dataset.
+
+| Raw Input (from portal) | Canonical District |
+|---|---|
+| "Legazpi" | Arganzuela |
+| "Embajadores, Centro" | Centro |
+| "Barrio de Salamanca" | Salamanca |
+| "Gaztambide" | Chamberí |
+| "PAU de Carabanchel" | Carabanchel |
+| "Casco Historico de Vallecas" | Puente de Vallecas |
+
+*Table 7.* District normalization examples.
+
+**Postal code extraction.** The `extract_postal_code()` function uses a two-step approach. First, a regex pattern `\b(28\d{3})\b` searches the address or URL text for a five-digit code starting with 28 (Madrid's postal prefix). If no match is found, the function falls back to a `ZONE_TO_POSTAL` dictionary that maps 131 barrio names to their primary postal codes (28001 through 28055). This hybrid approach maximizes coverage: regex catches codes embedded in addresses, while the dictionary handles cases where only the barrio name is known.
+
+## Ingestion and deduplication
+
+The `ingest_listings()` function receives parsed listings from any scraper and loads them into the deals table through a PostgreSQL upsert operation.
+
+**Data quality filters.** Before upserting, each listing must pass four validation checks: it must have a URL, an asking price, a size in square meters, and a canonical Madrid district (returned by `normalize_district()`). Listings missing any of these fields are silently skipped. This filter ensures that only queryable, analyzable data enters the database.
+
+**Upsert strategy.** The URL column has a unique constraint. When a listing URL already exists in the database, the `ON CONFLICT DO UPDATE` clause applies two different strategies depending on the field:
+
+- **COALESCE fields** (size_sqm, bedrooms, bathrooms, floor, district, zone, address, condition, orientation, broker_name, broker_contact, listed_date, property_type, postal_code): the new value is used only if it is not null; otherwise the existing value is preserved. This prevents a re-scrape from overwriting previously captured data with null values.
+- **OVERWRITE fields** (asking_price, storage_room, terrace, balcony, elevator, garage): the latest scraped value always replaces the existing one. Price updates should always reflect the current listing price, and amenity booleans from a more detailed source should override defaults.
+
+In practice, this means data quality only goes up with each scrape cycle. New non-null values fill gaps, but existing good data is never overwritten with blanks.
+
+## Automated ML prediction on ingest
+
+After each scrape batch, the `_auto_predict_new_deals()` function runs ML predictions on newly inserted deals (those that did not previously exist in the database). Predictions are stored in the predictions table with `model_version="auto"` to distinguish them from manually triggered batch predictions.
+
+This step is wrapped in a try/except block so that ML failures, such as a missing model artifact or an incompatible feature column, never prevent the scraping operation from completing. The scraper returns the count of genuinely new rows inserted, excluding updates to existing records.
+
+## Notary data collection
+
+Official closing price data is collected from the Colegio General del Notariado through its ArcGIS FeatureServer REST API. The API exposes transaction statistics at multiple geographic levels; this system queries Layer 4, which provides postal code-level granularity.
+
+The scraper constructs queries with two filter dimensions:
+
+| Filter | ID Values | Meaning |
+|---|---|---|
+| tipo_construccion_id | 7, 9, 99 | Nueva (new), Segunda mano (second-hand), Todos (all) |
+| clase_finca_urbana_id | 14, 15, 99 | Pisos (apartments), Casas (houses), Todos (all) |
+
+*Table 8.* Notary filter combinations (3 x 3 = 9 total).
+
+The system scrapes all nine combinations for postal codes 28001 through 28055 (55 postal codes), yielding up to 495 records. Each record contains: average price per square meter at closing, average total transaction price, average property surface area, number of transactions with price data, and total number of transactions.
+
+Records are upserted using a composite unique key of (postal_code, construction_type, property_class). On conflict, the price and transaction statistics are updated while preserving the record identity.
+
+```
+                    ┌──────────────────────┐
+                    │   5 Portal Scrapers  │
+                    │ (API, JSON, Firecrawl)│
+                    └──────────┬───────────┘
+                               │ raw listings
+                               ▼
+                    ┌──────────────────────┐
+                    │ normalize_district() │
+                    │ extract_postal_code()│
+                    │ normalize_condition()│
+                    └──────────┬───────────┘
+                               │ canonical fields
+                               ▼
+                    ┌──────────────────────┐
+                    │  Quality Filters     │
+                    │ require: url, price, │
+                    │ size_sqm, district   │
+                    └──────────┬───────────┘
+                               │ validated listings
+                               ▼
+                    ┌──────────────────────┐
+                    │ ingest_listings()    │
+                    │ URL-based upsert     │
+                    │ COALESCE + OVERWRITE │
+                    └──────────┬───────────┘
+                               │ new deals
+                               ▼
+                    ┌──────────────────────┐
+                    │ _auto_predict_new    │
+                    │ _deals()             │
+                    │ model_version="auto" │
+                    └──────────────────────┘
+```
+
+*Figure 5.* Data collection pipeline flow.
+
+# Machine learning valuation model
+
+## Problem formulation
+
+The valuation model is a supervised regression task: given a set of physical and locational features of a property, predict its market price. The target variable is the asking price as listed on the portal. While asking prices do not represent actual transaction values (as discussed in the Notary Data section), they provide the most abundant and consistent label available across all five data sources.
+
+To handle the right-skewed distribution of property prices, the target is log-transformed during training using `y = log(1 + price)`. This transformation compresses the range of the target variable, giving the model proportional rather than absolute error incentives. At inference time, predictions are reversed with `price = exp(y_pred) - 1`.
+
+## Feature engineering
+
+The `deal_to_features()` function converts a database Deal object into a feature dictionary suitable for model input. The features fall into three categories:
+
+| Feature | Type | Encoding | Source Field |
+|---|---|---|---|
+| Metros Cuadrados | Numeric | Direct | size_sqm |
+| Numero de Habitaciones | Numeric | Direct (default 0) | bedrooms |
+| Numero de Banos | Numeric | Direct (default 0) | bathrooms |
+| Planta | Numeric | Direct (default 0) | floor |
+| Trastero | Binary | 0/1 | storage_room |
+| Terraza | Binary | 0/1 | terrace |
+| Balcon | Binary | 0/1 | balcony |
+| Ascensor | Binary | 0/1 | elevator |
+| Garaje | Binary | 0/1 | garage |
+| Distrito | Categorical | One-hot | district |
+| Zona | Categorical | One-hot | zone |
+| Estado | Categorical | One-hot | condition |
+| Ubicacion | Categorical | One-hot | orientation |
+
+*Table 9.* Feature summary.
+
+No price-derived features are included in the feature set. Using the asking price or price per square meter as a feature would constitute data leakage, since the model's target is the price itself. The model must learn price solely from physical characteristics and location.
+
+Missing numeric values default to zero. Missing categorical values default to empty strings, which are then one-hot encoded as their own category. Binary amenity fields convert Python booleans to integer 0 or 1 values.
+
+## Data preprocessing
+
+Before training, the dataset undergoes several preprocessing steps:
+
+1. **Filtering.** Deals must have both a non-null asking price and a non-null size in square meters. Deals with a price per square meter below 500 or above 25,000 euros are also excluded as outliers. These thresholds remove data entry errors (listings with placeholder prices) and extreme luxury properties that would distort the model. A minimum of 50 deals is required to proceed with training; below that, the training function returns `None`.
+
+2. **One-hot encoding.** Categorical features (Distrito, Zona, Estado, Ubicacion) are expanded into binary columns using `pd.get_dummies()`. With 21 districts, this step can produce a substantial number of columns. The column names are saved as a model artifact so that inference can align new data to the training schema.
+
+3. **Train-test split.** The dataset is split 85/15 into training and test sets with `random_state=42` for reproducibility.
+
+4. **Feature scaling.** A `StandardScaler` is fitted on the training set and applied to both training and test sets. The fitted scaler is saved as an artifact for use during inference.
+
+## Model selection and hyperparameters
+
+The system uses scikit-learn's `GradientBoostingRegressor` with the following hyperparameters:
+
+| Hyperparameter | Value | Rationale |
+|---|---|---|
+| n_estimators | 300 | Sufficient ensemble complexity for a dataset of ~3,000 deals without excessive training time |
+| max_depth | 5 | Limits individual tree complexity, preventing overfitting to small district-level samples |
+| learning_rate | 0.05 | Conservative shrinkage factor; lower values require more estimators but produce smoother convergence |
+| subsample | 0.8 | Stochastic gradient boosting: each tree trains on 80% of the data, reducing variance |
+| random_state | 42 | Reproducibility |
+
+*Table 10.* Model hyperparameters.
+
+Gradient Boosting was chosen over the alternatives after testing. Linear regression cannot capture the non-linear relationship between location and price. Random forests perform reasonably but miss the sequential error correction that boosting provides. Neural networks need more data than 3,000 records to train well and give less interpretable feature importances. Gradient boosting works with mixed feature types out of the box, tolerates outliers when paired with the log-transform, and produces feature importance scores that help explain what the model is doing.
+
+## Training pipeline
+
+The training pipeline executes the following steps:
+
+1. Query all deals from the database and convert each to a feature dictionary using `deal_to_features()`.
+2. Create a pandas DataFrame and apply the data quality filters (non-null price/size, outlier exclusion).
+3. One-hot encode categorical features with `pd.get_dummies()`.
+4. Log-transform the target: `y = np.log1p(asking_price)`.
+5. Split into 85% training and 15% test sets.
+6. Fit a `StandardScaler` on the training features and transform both sets.
+7. Train the `GradientBoostingRegressor` on the scaled training data.
+8. Evaluate on the test set (reversing the log-transform for interpretable metrics).
+9. Run five-fold cross-validation on the full scaled dataset, reporting R-squared mean and standard deviation.
+10. Save three artifacts with timestamps: the trained model, the fitted scaler, and the column name list. Also save copies without timestamps as the "current" versions for inference.
+
+Cache invalidation is handled by the `POST /ml/retrain` endpoint, which clears the `@lru_cache` decorators on the model, scaler, and column loaders. This forces the next prediction request to load the freshly trained artifacts from disk.
+
+## Model evaluation
+
+The model was trained on the production dataset of 3,190 deals (after outlier filtering from 3,195 total).
+
+| Metric | Value | Interpretation |
+|---|---|---|
+| R-squared (test set) | 0.866 | The model explains 86.6% of price variance on unseen data |
+| R-squared (5-fold CV mean) | 0.886 | Stable generalization across all partitions of the dataset |
+| R-squared (5-fold CV std) | 0.024 | Low variance across folds, indicating consistent performance |
+| MAE (test set) | 166,080 EUR | Average prediction error of approximately 166,000 euros |
+
+*Table 11.* Model evaluation metrics.
+
+An R-squared of 0.87 on the test set means the model captures most of the price variation from physical and locational features alone. The cross-validation R-squared of 0.89 with a standard deviation of 0.024 confirms this is not a lucky split; the model generalizes consistently across all five folds.
+
+The MAE of 166,080 euros needs context. The typical property in the dataset is priced somewhere between 300,000 and 800,000 euros (given the median price per square meter of 5,375 euros). An error of 166,000 euros is roughly 20 to 30 percent of the typical property value. That makes the model useful for screening and ranking, less so for setting a final price. Final valuations should still involve market comparables and professional judgment.
+
+[FIGURE PLACEHOLDER: *Figure 6.* Distribution of asking prices before and after log transformation. Two side-by-side histograms showing the right-skewed raw distribution and the more symmetric log-transformed distribution.]
+
+[FIGURE PLACEHOLDER: *Figure 7.* Predicted vs. actual price scatter plot on the test set. Points should cluster along the diagonal; deviations from the diagonal represent prediction errors.]
+
+[FIGURE PLACEHOLDER: *Figure 8.* Feature importance bar chart showing the top 15 features by importance score from the Gradient Boosting model. District and size features are expected to dominate.]
+
+## Model deployment and inference
+
+At inference time, the `predict_price_from_features()` function follows these steps:
+
+1. Accept a feature dictionary with the same keys used during training.
+2. Create a single-row DataFrame and apply one-hot encoding with `pd.get_dummies()`.
+3. Align columns with the training schema using `df.reindex(columns=saved_columns, fill_value=0)`. This ensures that districts or zones not seen during training receive zero-valued columns rather than causing a dimension mismatch.
+4. Apply the cached StandardScaler.
+5. Predict the log-price using the cached model.
+6. Reverse the log-transform: `price = np.expm1(y_pred_log[0])`.
+
+The model artifacts (model, scaler, column list) are loaded once and cached in memory using `@lru_cache`. Subsequent predictions reuse the cached objects, eliminating disk I/O. The cache is invalidated only when the model is retrained through the `/ml/retrain` endpoint.
+
+Two inference modes are supported:
+- **Manual batch prediction.** The user selects deals on the Valuaciones page and triggers `POST /deals/predict` with a list of deal IDs. The backend iterates through each deal, converts it to features, runs inference, and stores the prediction.
+- **Automatic prediction on scrape.** After each scrape batch, newly inserted deals receive predictions automatically with `model_version="auto"`.
+
+```
+Training:                          Inference:
+┌──────────┐                       ┌──────────┐
+│ deals DB │                       │ deal obj │
+└────┬─────┘                       └────┬─────┘
+     │ deal_to_features()               │ deal_to_features()
+     ▼                                  ▼
+┌──────────┐                       ┌──────────┐
+│ DataFrame│                       │ DataFrame│
+│ + dummies│                       │ + dummies│
+└────┬─────┘                       └────┬─────┘
+     │ log1p(price)                     │ reindex(cols)
+     ▼                                  ▼
+┌──────────┐                       ┌──────────┐
+│ Split    │                       │ Scale    │
+│ 85/15    │                       │ (cached) │
+└────┬─────┘                       └────┬─────┘
+     │ StandardScaler.fit()             │ model.predict()
+     ▼                                  ▼
+┌──────────┐                       ┌──────────┐
+│ GB.fit() │                       │ expm1()  │
+└────┬─────┘                       └────┬─────┘
+     │ save .pkl                        │ predicted
+     ▼                                  ▼ price (EUR)
+┌──────────┐
+│ CV(5-fold│
+│ evaluate │
+└──────────┘
+```
+
+*Figure 9.* ML pipeline: training (left) and inference (right).
+
+# Financial analysis model
+
+## Fix and Flip strategy overview
+
+The Fix and Flip strategy targets properties listed in conditions described as "a reformar" (needing renovation). The investor purchases the property at a discount, renovates it to "buen estado" (good condition), and sells at a higher price that reflects the improved state. In Madrid, this strategy is viable because a significant portion of the housing stock is older construction in need of updates, and the price gap between "a reformar" and "buen estado" properties in the same district can be substantial.
+
+The financial model implemented in CapReSol computes investment returns from the equity investor's perspective, accounting for leverage, interest costs, operating expenses, and taxes. All cash flows are modeled at monthly granularity.
+
+## Model inputs
+
+| Input | Unit | Default | Description |
+|---|---|---|---|
+| size_sqm | m2 | — | Property surface area |
+| purchase_price | EUR | — | Total acquisition cost |
+| exit_price_per_sqm | EUR/m2 | — | Expected post-renovation price per square meter |
+| capex_total | EUR | — | Total renovation budget |
+| capex_months | months | — | Duration of renovation works |
+| project_months | months | — | Total hold period from purchase to sale |
+| monthly_opex | EUR/month | — | Recurring costs (utilities, community fees) |
+| ibi_annual | EUR/year | — | Annual property tax (Impuesto sobre Bienes Inmuebles) |
+| closing_costs_pct | % | 7.5% | Transaction costs at purchase (ITP, notary, registry, lawyers) |
+| broker_fee_pct | % | 3.63% | Exit broker commission including VAT |
+| mortgage_ltv | % | 0% | Loan-to-value ratio for acquisition mortgage |
+| mortgage_rate_annual | % | 0% | Annual interest rate on acquisition mortgage |
+| capex_debt | EUR | 0 | Debt financing for renovation |
+| capex_debt_rate_annual | % | 0% | Annual interest rate on renovation debt |
+| tax_rate | % | 0% | Tax rate on profits |
+
+*Table 12.* Fix and Flip model inputs.
+
+## Cash flow construction
+
+Cash flows are constructed from the equity investor's perspective, where negative values represent outflows and positive values represent inflows:
+
+**Month 0 (Purchase):**
+```
+cash_flow_0 = -(equity_at_purchase + closing_costs)
+
+where:
+  mortgage_debt = purchase_price * mortgage_ltv
+  equity_at_purchase = purchase_price - mortgage_debt
+  closing_costs = purchase_price * closing_costs_pct
+```
+
+**Months 1 through capex_months (Renovation):**
+```
+cash_flow_m = -capex_equity_monthly - monthly_opex - ibi_monthly
+              - mortgage_interest_monthly - capex_interest_monthly
+
+where:
+  capex_equity = capex_total - capex_debt
+  capex_equity_monthly = capex_equity / capex_months
+  ibi_monthly = ibi_annual / 12
+  mortgage_interest_monthly = mortgage_debt * (mortgage_rate / 12)
+  capex_interest_monthly = capex_debt * (capex_debt_rate / 12)
+```
+
+**Months capex_months+1 through project_months-1 (Holding):**
+```
+cash_flow_m = -monthly_opex - ibi_monthly
+              - mortgage_interest_monthly - capex_interest_monthly
+```
+
+**Month project_months (Exit):**
+```
+cash_flow_exit = (above monthly costs)
+                 + net_exit_price - total_debt_repayment
+
+where:
+  gross_exit_price = exit_price_per_sqm * size_sqm
+  broker_fee = gross_exit_price * broker_fee_pct
+  net_exit_price = gross_exit_price - broker_fee
+  total_debt_repayment = mortgage_debt + capex_debt
+```
+
+All debt is modeled as interest-only during the holding period, with full principal repayment at exit. This reflects common short-term financing structures for flip projects.
+
+## Output metrics
+
+The model computes four primary return metrics and several supporting figures:
+
+**IRR (Internal Rate of Return).** Computed from the monthly cash flow array using `numpy_financial.irr()`, then annualized: `annual_IRR = (1 + monthly_IRR)^12 - 1`. IRR represents the annualized return that makes the net present value of all cash flows equal to zero.
+
+**MOIC (Multiple on Invested Capital).** `MOIC = (max_equity_exposure + profit) / max_equity_exposure`. A MOIC of 1.5x means the investor receives 1.5 euros for every euro of peak equity deployed.
+
+**ROE (Return on Equity).** `ROE = profit / max_equity_exposure`. Measures profit as a percentage of the maximum capital at risk.
+
+**Gross Margin.** `gross_margin = profit / total_dev_cost`. Measures profit as a percentage of total development cost, useful for comparing projects of different scales.
+
+**Max Equity Exposure.** The peak negative cumulative cash flow during the project, representing the maximum capital the equity investor has tied up at any point. This is the denominator for MOIC and ROE, and it is more meaningful than initial equity deployed because ongoing renovation and operating costs increase total capital at risk during the project.
+
+## Leverage effects
+
+Leverage amplifies returns when a deal is profitable and amplifies losses when it is not. By financing a portion of the purchase price with a mortgage, the investor reduces their equity contribution at Month 0. This lower denominator increases IRR, ROE, and MOIC for profitable deals. However, interest payments during the holding period reduce absolute profit.
+
+The model supports two independent debt instruments: an acquisition mortgage (applied as a percentage of purchase price via LTV) and capex debt (a fixed amount for renovation financing). Each has its own interest rate. This dual-debt structure reflects real market conditions where acquisition and renovation financing often come from different sources with different terms.
+
+# Analytics dashboard
+
+## Design philosophy
+
+The analytics dashboard is built around one question: where should the next investment be? Instead of showing raw market statistics, every section is designed to compare data sources against each other and surface actionable opportunities.
+
+Three layers of upside comparison form the analytical backbone:
+
+1. **Conservative upside:** Compare portal asking prices for "a reformar" properties against notary closing prices for "nueva" (new) properties. This estimates the potential gain from buying a renovation candidate at asking price and selling at the price the market actually pays for new properties.
+2. **Optimistic upside:** Compare portal asking prices for "a reformar" against portal asking prices for "buen estado" properties. This shows the price gap between renovation candidates and finished properties, though asking prices may overstate the actual achievable price.
+3. **Market ceiling:** Compare notary closing prices for "segunda mano" (second-hand) against "nueva" (new) properties. Both figures are real transaction data, showing the structural price difference between property types in each district.
+
+## Analytics architecture
+
+The analytics endpoint (`GET /analytics`) returns 13 data structures in a single response. All aggregation and computation happens on the backend; the frontend only renders the results. This design avoids sending raw deal data to the client and ensures that filtering logic is consistent.
+
+Four query parameters control the analysis:
+- `max_price_sqm` (default 25,000) and `min_price_sqm` (default 500): exclude outlier deals from aggregations
+- `notary_construction` (default "segunda_mano"): filter notary data by construction type
+- `notary_class` (default "pisos"): filter notary data by property class (apartments vs. houses)
+
+A critical data join bridges the notary data (indexed by postal code) with the deal data (indexed by district). The system maps each notary postal code to its corresponding district, then aggregates notary statistics at the district level weighted by transaction count to produce accurate district-level averages.
+
+## Dashboard sections
+
+The dashboard displays ten sections in the following order:
+
+**Section 1: KPI Strip.** Four summary cards: total listings in the dataset, count of "a reformar" listings, the district with the highest upside, and the most affordable district by price per square meter.
+
+**Section 2: Oportunidad Real por Distrito (Conservative Upside).** A table comparing the average asking price per square meter of "a reformar" listings from portals against the average closing price per square meter of "nueva" properties from notary data, for each district. The upside is computed as `(closing_nueva - asking_reformar) / asking_reformar * 100`. Districts with positive upside are shown, sorted by upside descending. The top three are highlighted. Each row includes a clickable link to the deals page filtered by that district and "a reformar" condition.
+
+**Section 3: Upside en Portales (Optimistic Upside).** Same structure as Section 2, but comparing "a reformar" asking prices against "buen estado" asking prices, both from portal data. This provides a more optimistic estimate because asking prices for "buen estado" may be higher than actual closing prices.
+
+**Section 4: Upside del Mercado (Market Ceiling).** Notary closing prices for "segunda mano" versus "nueva" properties, both from official transaction data. This section shows the structural price ceiling in each district, without an actionable link because these are aggregate market statistics rather than specific deal opportunities.
+
+**Section 5: Margen de Negociacion por Distrito (Negotiation Margin).** Compares portal asking prices against notary closing prices per district, showing the percentage gap. A dropdown filter allows switching between all properties, second-hand only, or new construction only. Color coding indicates the negotiation room: above 15% in red (significant overpricing), 5-15% in yellow (moderate), below 5% in green (tight market).
+
+**Section 6: Valoracion ML vs Precio Pedido (ML Spread).** Shows the average percentage difference between ML-predicted prices and asking prices per district. Green highlighting (spread above 5%) indicates districts where the model suggests properties are undervalued relative to asking prices. Red (negative spread) indicates potential overvaluation.
+
+**Section 7: Estado de la Propiedad (Condition Distribution).** A pie chart showing the proportion of listings in each condition category: "a reformar," "buen estado," and "nueva." This gives context on the available opportunity pool for renovation strategies.
+
+**Section 8: Nuevos Listings por Mes (Timeline).** A line chart of new listings over time, grouped by the portal's listed date rather than the system's ingestion date. This shows market activity trends and listing velocity.
+
+**Section 9: Cartera Analizada (Portfolio Summary).** KPI cards aggregating metrics from all saved financial analyses: count, average IRR, average MOIC, and average ROE. This section only appears when at least one analysis exists.
+
+**Section 10: Mostrar Mas (Expanded Analysis).** A collapsible section containing supplementary charts: a horizontal bar chart of price per square meter by district (sorted descending with a market average reference line), price and size distribution histograms, bedroom count distribution, and amenity prevalence bars showing the percentage of listings with elevator, terrace, balcony, garage, and storage room.
+
+[SCREENSHOT PLACEHOLDER: *Figure 11.* Analytics dashboard overview showing the KPI strip and conservative upside chart.]
+
+[SCREENSHOT PLACEHOLDER: *Figure 12.* Negotiation margin table with color-coded spread percentages.]
+
+## Opportunity scoring
+
+The analytics endpoint computes a composite opportunity score for each district by ranking on three dimensions:
+
+1. **Price rank:** Districts sorted by average price per square meter ascending (cheapest entry point = best rank)
+2. **Reform upside rank:** Districts sorted by reform upside descending (biggest renovation gap = best rank)
+3. **ML spread rank:** Districts sorted by ML-vs-asking spread descending (most undervalued by model = best rank)
+
+Each rank is converted to a 1-10 scale, and the three scores are averaged. The opportunity table is sorted by composite score ascending, so the lowest score represents the most attractive investment opportunity.
+
+# Results and discussion
+
+## Data collection results
+
+The production system contains 3,195 property listings across all 21 administrative districts of Madrid.
+
+| District | Listings | % of Total |
+|---|---|---|
+| Centro | 545 | 17.1% |
+| Salamanca | 381 | 11.9% |
+| Carabanchel | 213 | 6.7% |
+| Chamberí | 193 | 6.0% |
+| Puente de Vallecas | 171 | 5.4% |
+| Ciudad Lineal | 169 | 5.3% |
+| Tetuán | 165 | 5.2% |
+| Latina | 160 | 5.0% |
+| Retiro | 136 | 4.3% |
+| Fuencarral-El Pardo | 135 | 4.2% |
+| Chamartín | 122 | 3.8% |
+| Moncloa-Aravaca | 111 | 3.5% |
+| San Blas-Canillejas | 104 | 3.3% |
+| Arganzuela | 100 | 3.1% |
+| Hortaleza | 99 | 3.1% |
+| Usera | 96 | 3.0% |
+| Villaverde | 92 | 2.9% |
+| Villa de Vallecas | 84 | 2.6% |
+| Vicálvaro | 68 | 2.1% |
+| Moratalaz | 30 | 0.9% |
+| Barajas | 21 | 0.7% |
+
+*Table 13.* Dataset distribution by district.
+
+Centro and Salamanca together account for 29 percent of all listings, which tracks with their status as Madrid's most active residential markets. Peripheral districts like Moratalaz, Barajas, and Vicálvaro have the fewest listings, likely due to lower market activity and sparser portal coverage.
+
+By source, Idealista contributed 1,857 listings (58.1%), Redpiso 782 (24.5%), Fotocasa 291 (9.1%), and Pisos.com 265 (8.3%). Idealista's large share makes sense: it is Spain's largest property portal, and both the API and HTML scraping channels feed into the count.
+
+Of the 3,195 listings, 1,240 (38.8%) are classified as "buen estado," 290 (9.1%) as "a reformar," and 86 (2.7%) as "nueva." The remaining 1,579 (49.4%) have no condition data at all. This is mostly because Redpiso does not provide condition information, and the Firecrawl-based scrapers only detect condition when specific keywords appear in the listing text.
+
+**Field completeness:**
+
+| Field | Coverage |
+|---|---|
+| size_sqm | 100.0% |
+| district | 100.0% |
+| bedrooms | 98.7% |
+| bathrooms | 92.5% |
+| zone | 75.7% |
+| floor | 58.7% |
+| condition | 50.6% |
+| postal_code | 11.9% |
+| orientation | 11.4% |
+
+*Table 14.* Field completeness across the dataset.
+
+Size and district have perfect coverage because they are required by the data quality filter. Bedrooms and bathrooms are well covered. Floor, condition, postal code, and orientation have lower coverage, primarily because not all portals provide these fields in a format that can be reliably parsed.
+
+The average asking price per square meter across the dataset is 8,450 euros, with a median of 5,375 euros. The gap between mean and median is typical of real estate: a handful of luxury listings in Salamanca and Chamberí pull the average up while most properties cluster at lower price points.
+
+## Machine learning results
+
+The Gradient Boosting model was trained on 3,190 listings (after outlier filtering) and evaluated on a held-out test set and through five-fold cross-validation.
+
+| Metric | Value |
+|---|---|
+| R-squared (test) | 0.866 |
+| R-squared (5-fold CV mean) | 0.886 |
+| R-squared (5-fold CV std) | 0.024 |
+| MAE (test) | 166,080 EUR |
+| Model version | gb_20260320_104153 |
+| Deals trained | 3,190 |
+
+*Table 15.* Machine learning evaluation results.
+
+The model explains 86.6 percent of price variance on held-out data. Cross-validation confirms this is not an artifact of a favorable train-test split: the five-fold CV mean of 0.886 with a standard deviation of 0.024 indicates stable generalization.
+
+The MAE of 166,080 euros is substantial in absolute terms. For a property listed at 500,000 euros, this represents a 33 percent error. For a property listed at 1,000,000 euros, it represents 17 percent. This level of accuracy makes the model suitable for screening and ranking but not for final pricing decisions. Several factors explain the error magnitude:
+
+- **Dataset size.** At 3,190 listings, the dataset is modest compared to institutional AVMs that train on millions of transactions. More data, particularly from additional scraping cycles, would likely improve performance.
+- **Feature sparsity.** Nearly half the listings lack condition data, and only 12 percent have postal codes. Condition and precise location are among the strongest price determinants in real estate.
+- **Asking vs. transaction prices.** The model is trained on asking prices, which include the seller's negotiation buffer. Two properties with similar features but different sellers may have different asking prices for the same underlying market value.
+
+[FIGURE PLACEHOLDER: *Figure 14.* Predicted vs. actual scatter plot showing model accuracy across the price range.]
+
+[FIGURE PLACEHOLDER: *Figure 15.* Feature importance chart from the Gradient Boosting model, showing the relative contribution of each feature to predictions.]
+
+## Financial analysis results
+
+The Fix and Flip financial model has been implemented and tested with sample scenarios. Below is a worked example for a typical Madrid renovation project:
+
+| Input | Value |
+|---|---|
+| Size | 80 m2 |
+| Purchase price | 240,000 EUR (3,000 EUR/m2) |
+| Renovation budget | 40,000 EUR (500 EUR/m2) |
+| Renovation duration | 4 months |
+| Total project | 8 months |
+| Exit price | 4,500 EUR/m2 |
+| Monthly opex | 200 EUR |
+| IBI annual | 800 EUR |
+| Closing costs | 7.5% |
+| Broker fee | 3.63% |
+| Mortgage LTV | 60% |
+| Mortgage rate | 6.7% annual |
+| Tax rate | 19% |
+
+In this scenario, the investor purchases an 80 square meter apartment in "a reformar" condition at 3,000 EUR/m2, renovates it for 500 EUR/m2, and sells at 4,500 EUR/m2. With 60 percent leverage, the equity required at purchase drops to 96,000 euros plus 18,000 euros in closing costs. The gross exit price is 360,000 euros, from which the broker fee of 13,068 euros is subtracted. After repaying the mortgage debt of 144,000 euros, the net proceeds flow to the equity investor.
+
+The model outputs the monthly cash flow array and computes the annualized IRR, MOIC, ROE, and gross margin from the equity investor's perspective.
+
+## Analytics insights
+
+The analytics dashboard, when populated with both portal and notary data, provides several forms of market intelligence:
+
+Comparing portal asking prices against notary closing prices reveals the typical discount from asking to closing in each district. Districts with larger spreads have more room for negotiation. Districts with tight spreads are competitive markets where asking prices already reflect what buyers pay.
+
+The condition distribution shows that 9.1 percent of listings are explicitly classified as "a reformar." Combined with the 49.4 percent where condition is unknown, there may be a much larger pool of renovation opportunities than the data currently captures. Better condition detection in the scraping layer would improve the precision of the upside calculations.
+
+The ML spread analysis identifies districts where the model consistently predicts higher prices than sellers are asking. These signals may indicate systematic underpricing, motivated sellers, or market inefficiencies worth investigating.
+
+## Professional feedback
+
+[PLACEHOLDER: The following section should contain feedback from five real estate professionals (from Argentina and Spain) who reviewed the CapReSol system.]
+
+**Methodology.** Five professionals with experience in real estate investment, brokerage, and fund management were given access to the production system and asked to evaluate its utility for their daily workflows. Their feedback was collected through [structured interviews / written questionnaires / live demos with follow-up questions].
+
+**Participant Profiles:**
+
+| # | Role | Location | Experience |
+|---|---|---|---|
+| 1 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+| 2 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+| 3 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+| 4 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+| 5 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+
+*Table 16.* Professional feedback participants.
+
+**Key Findings:**
+
+[PLACEHOLDER: Summarize the main themes from professional feedback. Expected areas: data consolidation value, ML prediction utility, financial model usefulness, analytics dashboard insights, missing features, suggestions for improvement.]
+
+## Discussion
+
+The results support the thesis that a unified platform can address the three identified inefficiencies.
+
+On data fragmentation: the system collects and normalizes listings from five sources into a single dataset of over 3,000 listings across all 21 Madrid districts. The URL-based deduplication and the COALESCE/OVERWRITE upsert logic mean data quality improves with each scraping cycle without duplicates or lost data.
+
+On valuation opacity: the ML model's R-squared of 0.87 shows that property characteristics and location explain most of the price variation. The MAE of 166,000 euros is too large for final pricing decisions, but it gives a systematic, reproducible baseline for screening deals at scale, which is better than relying on intuition alone.
+
+On the analytical gap: having ML predictions, notary closing prices, and Fix and Flip financial analysis in one dashboard means an analyst can go from deal identification to investment decision without switching tools. The opportunity scoring algorithm condenses multiple signals into a single district ranking, which cuts down on the mental work of cross-referencing separate spreadsheets.
+
+That said, the system has clear limitations. The dataset covers all 21 districts but is modest in size. Half the listings lack condition data, which limits renovation-based analysis. The notary data is a single snapshot with no historical trend. The ML model has not been benchmarked against commercial AVMs. Geographic scope stops at Madrid city proper. And the Cap Rate model for rental strategies was not implemented.
+
+# Conclusions and future work
+
+## Summary of contributions
+
+CapReSol is a production web application that automates the real estate investment analysis pipeline for Madrid. It delivers six capabilities:
+
+1. **Multi-source data collection.** Five scrapers collect listings from Idealista (API and HTML), Redpiso, Fotocasa, and Pisos.com, normalizing them into a unified schema with 21 canonical districts and 55 postal codes. The production dataset contains 3,195 listings.
+
+2. **Machine learning valuation.** A Gradient Boosting model trained on 3,190 listings achieves R-squared of 0.87 on held-out data and 0.89 on five-fold cross-validation, with automatic prediction on new listings at scrape time.
+
+3. **Notary data integration.** Official closing prices from the Colegio General del Notariado cover 55 postal codes across nine filter combinations, enabling comparison of asking prices against real transaction values.
+
+4. **Financial modeling.** A Fix and Flip model computes IRR, MOIC, ROE, and gross margin from monthly equity cash flows with dual-debt leverage support, ported from a reference Excel model to Python.
+
+5. **Analytics dashboard.** Ten chart sections surface investment opportunities through three upside comparisons, negotiation margin analysis, ML spread detection, and a composite opportunity scoring algorithm.
+
+6. **Production deployment.** JWT-authenticated multi-user access on Railway (backend) and Vercel (frontend) with auto-deployment from GitHub.
+
+In terms of efficiency: data collection that would take an analyst hours per portal now runs in minutes. Valuation that relied on gut feeling and manual comparables gets supplemented by a reproducible ML model. Financial analysis that lived in separate Excel files is now integrated with the deal database. None of these replace professional judgment, but they reduce the manual work required to get to a judgment.
+
+## Answering the research objectives
+
+| Objective | Status | Evidence |
+|---|---|---|
+| O1: Multi-source scraping | Achieved | 3,195 deals from 5 sources, 21 districts |
+| O2: ML valuation | Achieved | R-squared 0.87 test, 0.89 CV, auto-predict on scrape |
+| O3: Notary integration | Achieved | 55 postal codes, 9 filter combinations, ArcGIS API |
+| O4: Financial modeling | Achieved | Fix and Flip with IRR, MOIC, ROE, leverage support |
+| O5: Analytics dashboard | Achieved | 10 sections, 3 upside charts, opportunity scoring |
+| O6: Production deployment | Achieved | Railway + Vercel, JWT auth, 6 users, auto-deploy |
+
+*Table 17.* Objective achievement summary.
+
+All six objectives were fully implemented and deployed in production. The Cap Rate financial model, originally planned as part of Objective 4, was not implemented within the scope of this thesis and remains as future work.
+
+## Limitations
+
+- The dataset of 3,195 listings, while covering all districts, is small compared to institutional datasets. More scraping cycles would increase both coverage and ML accuracy.
+- Condition data is available for only 50.6 percent of listings, limiting renovation-based analysis.
+- Notary data represents a single time period. Historical time-series data would enable trend analysis.
+- The ML model has not been benchmarked against commercial AVMs in the Spanish market.
+- Geographic scope is limited to Madrid city proper. Expansion to metropolitan areas or other cities would require additional district mappings and postal code ranges.
+- The Cap Rate / rental yield financial model was not implemented.
+
+## Future work
+
+**Short-term improvements:**
+- Add a "Retrain Model" button in the frontend (the backend endpoint already exists).
+- Implement barrio-level breakdown in the analytics dashboard, expandable from the district view.
+- Build a deal detail page (`/deals/[id]`) with a property card, ML prediction history, and linked financial analyses.
+- Improve condition detection in the Firecrawl scrapers to reduce the 49 percent unknown rate.
+
+**Medium-term extensions:**
+- Implement the Cap Rate / rental yield financial model for buy-and-hold strategies.
+- Add scheduled scraping via cron jobs for automated data refresh without manual intervention.
+- Integrate time-series notary data if the penotariado API supports historical period queries.
+- Export analytics to PDF or Excel for reporting to investment committees.
+- Enable natural language search on the home page, parsing text queries into filter parameters.
+
+**Long-term evolution:**
+- **B2B vertical.** Position the platform as a SaaS tool for investment funds, asset managers, and family offices. Deepen the technology with fund-level portfolio analytics, deal flow management, and integration with CRM systems.
+- **B2C horizontal.** Offer a simplified version for retail investors who lack infrastructure for systematic deal analysis. A freemium model with tiered access could build a user base while generating data that attracts real estate agencies interested in platform visibility and user insights.
+- **Geographic expansion.** Extend coverage to Barcelona, Valencia, Malaga, and other Spanish cities. Each expansion requires new district-barrio mappings, postal code ranges, and potentially different portal configurations.
+
+## Final remarks
+
+The real estate technology market has moved past the adoption phase. Most firms have tools; the problem is that those tools do not talk to each other. CapReSol shows that it is possible to build a complete pipeline, from raw portal data to financial decision metrics, in a single application. It does not replace the work of evaluating a deal. It replaces the busywork that gets in the way of evaluating a deal.
+
+#
+
+#
+
+# References
+
+Baldominos, A., Saez, Y., & Quintana, D. (2018). Machine learning techniques for predicting housing prices: A review. *Advances in Intelligent Systems and Computing*, 584, 123-132.
+
+BBVA Research. (2024). Spain housing market outlook 2024. BBVA Research Publications.
+
+CBRE. (2024). Real estate investment market Spain 2024 report. CBRE Research.
+
+European PropTech Report. (2025). PropTech in Europe: Companies, trends, and investment landscape. European PropTech Association.
+
+Kok, N., Kopczuk, W., & Timmins, C. (2017). Big data in real estate: From manual appraisal to automated valuation models. *Journal of Portfolio Management*, 43(6), 202-211.
+
+Maps PropTech API. (2025). PropTech adoption survey Spain 2025: Tech stack, barriers, and automation needs. Maps PropTech API Annual Report.
+
+PwC. (2025). Tendencias del sector de tecnologia inmobiliaria en Espana 2025. PwC Spain Real Estate.
+
+Rosen, S. (1974). Hedonic prices and implicit markets: Product differentiation in pure competition. *Journal of Political Economy*, 82(1), 34-55.
+
+v7 Labs. (2026). AI in real estate: Key use cases, solutions, and challenges. Retrieved from v7labs.com/blog/best-ai-tools-for-real-estate
+
+# Appendix A: API Endpoint Documentation
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | /auth/login | No | Authenticate and receive JWT token |
+| GET | /deals/ | Yes | List all property deals |
+| POST | /deals/scrape | Yes | Trigger scraping from specified portal |
+| POST | /deals/predict | Yes | Run ML predictions on specified deal IDs |
+| DELETE | /deals/predictions/{id} | Yes | Delete a specific prediction |
+| GET | /analyses/ | Yes | List all financial analyses |
+| POST | /analyses/ | Yes | Create new Fix and Flip analysis |
+| PUT | /analyses/{id} | Yes | Update existing analysis |
+| DELETE | /analyses/{id} | Yes | Delete analysis |
+| GET | /analytics | Yes | Get all dashboard analytics data |
+| POST | /ml/retrain | Yes | Retrain ML model and return metrics |
+| GET | /notary/ | Yes | Query notary statistics |
+| POST | /notary/scrape | Yes | Scrape notary data from penotariado |
+
+*Table A1.* API endpoints.
+
+# Appendix B: Database Schema Details
+
+**deals table columns:**
+
+| Column | Type | Nullable | Constraint |
+|---|---|---|---|
+| id | UUID | No | Primary Key |
+| message_id | UUID | Yes | FK → messages.id |
+| address | Text | Yes | — |
+| city | Text | Yes | — |
+| country | Text | Yes | — |
+| property_type | Text | Yes | — |
+| size_sqm | Float | Yes | — |
+| bedrooms | Integer | Yes | — |
+| bathrooms | Integer | Yes | — |
+| floor | Integer | Yes | — |
+| asking_price | Float | Yes | — |
+| currency | String(3) | Yes | — |
+| url | Text | Yes | UNIQUE |
+| broker_name | Text | Yes | — |
+| broker_contact | Text | Yes | — |
+| district | Text | Yes | — |
+| zone | Text | Yes | — |
+| condition | Text | Yes | — |
+| orientation | Text | Yes | — |
+| storage_room | Boolean | Yes | — |
+| terrace | Boolean | Yes | — |
+| balcony | Boolean | Yes | — |
+| elevator | Boolean | Yes | — |
+| garage | Boolean | Yes | — |
+| listed_date | Date | Yes | — |
+| postal_code | String(5) | Yes | — |
+| created_at | DateTime | No | Default: now() |
+
+*Table B1.* Deals table schema.
+
+# Appendix C: Madrid District-Barrio Mapping (Sample)
+
+| District | Sample Barrios |
+|---|---|
+| Centro | Sol, Embajadores, Lavapies, Malasana, Chueca, Huertas, Palacio, Cortes, Universidad |
+| Salamanca | Recoletos, Goya, Castellana, Lista, Guindalera |
+| Chamberí | Trafalgar, Almagro, Gaztambide, Rios Rosas, Vallehermoso |
+| Chamartín | El Viso, Prosperidad, Ciudad Jardin, Hispanoamerica |
+| Retiro | Ibiza, Jeronimos, Nino Jesus, Pacífico, Adelfas |
+| Arganzuela | Legazpi, Delicias, Palos de Moguer, Chopera, Acacias |
+| Tetuán | Bellas Vistas, Cuatro Caminos, Castillejos, Almenara, Valdeacederas |
+| Latina | Lucero, Aluche, Campamento, Aguilas, Puerta del Angel |
+| Carabanchel | Vista Alegre, Comillas, Opanel, San Isidro, Buenavista |
+| Puente de Vallecas | Entrevias, San Diego, Palomeras, Numancia, Portazgo |
+
+*Table C1.* Sample district-barrio mappings (10 of 21 districts).
+
+# Appendix D: Frontend Screenshots
+
+[SCREENSHOT PLACEHOLDER: Home dashboard with quick stats and recent deals]
+
+[SCREENSHOT PLACEHOLDER: Deals page with filters, sorting, and column configuration]
+
+[SCREENSHOT PLACEHOLDER: Valuaciones page showing ML predictions with spread badges]
+
+[SCREENSHOT PLACEHOLDER: Analyses page showing Fix and Flip results with expanded detail row]
+
+[SCREENSHOT PLACEHOLDER: Analytics dashboard — full page overview]
+
+[SCREENSHOT PLACEHOLDER: Login page]
