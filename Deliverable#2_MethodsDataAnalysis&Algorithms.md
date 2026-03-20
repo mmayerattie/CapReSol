@@ -913,7 +913,7 @@ Of the 3,195 listings, 1,240 (38.8%) are classified as "buen estado," 290 (9.1%)
 | zone | 75.7% |
 | floor | 58.7% |
 | condition | 50.6% |
-| postal_code | 11.9% |
+| postal_code | 75.7% |
 | orientation | 11.4% |
 
 *Table 14.* Field completeness across the dataset.
