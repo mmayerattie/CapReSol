@@ -291,6 +291,150 @@ def extract_postal_code(text: Optional[str], zone: Optional[str] = None) -> Opti
     return None
 
 
+# ---------------------------------------------------------------------------
+# Shared condition & orientation detection
+# ---------------------------------------------------------------------------
+
+# Condition keywords grouped by priority (more specific first)
+_CONDITION_RENEW_KEYWORDS = [
+    "a reformar", "para reformar", "para restaurar", "necesita reforma",
+    "sin reformar", "totalmente a reformar", "reformar",
+]
+_CONDITION_GOOD_KEYWORDS = [
+    "buen estado", "muy buen estado", "bien conservado",
+    "para entrar a vivir", "listo para entrar", "totalmente reformado",
+    "completamente reformado", "recién reformado", "recien reformado",
+    "reformado", "segunda mano",
+]
+_CONDITION_NEW_KEYWORDS = [
+    "obra nueva", "nueva construcción", "nueva construccion",
+    "de obra nueva", "a estrenar",
+]
+
+
+def _detect_condition(text: str) -> Optional[str]:
+    """
+    Detect property condition from free text.
+
+    Returns 'renew', 'good', 'newdevelopment', or None.
+    Checks renew keywords first (because 'reformar' is a substring of
+    'reformado' — we want 'a reformar' → renew, 'reformado' → good).
+    """
+    if not text:
+        return None
+    low = text.lower()
+    for kw in _CONDITION_RENEW_KEYWORDS:
+        if kw in low:
+            return "renew"
+    for kw in _CONDITION_NEW_KEYWORDS:
+        if kw in low:
+            return "newdevelopment"
+    for kw in _CONDITION_GOOD_KEYWORDS:
+        if kw in low:
+            return "good"
+    return None
+
+
+# Orientation: ordered from most specific (compound) to least specific
+_ORIENTATION_KEYWORDS = [
+    ("noreste", "noreste"), ("noroeste", "noroeste"),
+    ("sureste", "sureste"), ("suroeste", "suroeste"),
+    ("norte", "norte"), ("sur", "sur"),
+    ("este", "este"), ("oeste", "oeste"),
+]
+
+# Regex: "Orientación norte", "orientado al sur", "orientación: este, sur"
+_RE_ORIENTATION = re.compile(
+    r'[Oo]rientaci[oó]n\s*:?\s*([^\n\*\[\]]{2,40}?)(?:\n|\*|\[|$)',
+)
+_RE_ORIENTADO = re.compile(
+    r'[Oo]rientad[oa]\s+(?:al?\s+)?([^\n\*\[\]]{2,30}?)(?:\n|\*|\.|,|\[|$)',
+)
+
+
+def _detect_orientation(text: str) -> Optional[str]:
+    """
+    Detect property orientation from free text.
+
+    Tries structured patterns first ('Orientación X'), then keyword scan.
+    Returns orientation string or None.
+    """
+    if not text:
+        return None
+
+    # Try structured regex first (e.g. "Orientación sur, oeste")
+    m = _RE_ORIENTATION.search(text)
+    if m:
+        val = m.group(1).strip().rstrip(',. ')
+        if val and len(val) < 40:
+            return val
+
+    # Try "orientado al norte" pattern
+    m = _RE_ORIENTADO.search(text)
+    if m:
+        val = m.group(1).strip().rstrip(',. ')
+        if val and len(val) < 30:
+            return val
+
+    # Fallback: keyword scan for cardinal directions
+    low = text.lower()
+    # Check for "exterior" / "interior" as orientation indicators
+    if "exterior" in low:
+        return "exterior"
+    if "interior" in low:
+        return "interior"
+
+    # Scan for cardinal directions — only if preceded by context that suggests
+    # orientation (avoid false positives from street names like "Calle Norte")
+    for kw, val in _ORIENTATION_KEYWORDS:
+        # Look for the keyword near orientation-related context
+        idx = low.find(kw)
+        if idx != -1:
+            # Check if there's orientation context within 60 chars before
+            nearby = low[max(0, idx - 60):idx]
+            if any(ctx in nearby for ctx in [
+                "orientaci", "orientad", "fachada", "vistas al",
+                "soleado", "luminoso",
+            ]):
+                return val
+
+    return None
+
+
+def _detect_exterior(text: str):
+    """Detect exterior/interior from text. Returns True (exterior), False (interior), or None."""
+    if not text:
+        return None
+    low = text.lower()
+    # Avoid false positives from "exterior de la finca" type phrases
+    # Look for patterns that clearly indicate the property itself
+    exterior_kws = ["piso exterior", "vivienda exterior", "exterior con", "exterior sin",
+                    "es exterior", "tipo exterior", "orientación exterior"]
+    interior_kws = ["piso interior", "vivienda interior", "interior con", "interior sin",
+                    "es interior", "tipo interior", "orientación interior"]
+
+    for kw in interior_kws:
+        if kw in low:
+            return False
+    for kw in exterior_kws:
+        if kw in low:
+            return True
+
+    # Simpler fallback: standalone "exterior" / "interior" in features-like context
+    # Check near common feature patterns (planta, ascensor, etc.)
+    import re
+    if re.search(r'planta\s+\d+[ªºa-z]*\s+exterior', low):
+        return True
+    if re.search(r'planta\s+\d+[ªºa-z]*\s+interior', low):
+        return False
+    if re.search(r'\bexterior\b', low) and any(w in low for w in ['planta', 'ascensor', 'hab', 'dormitorio']):
+        return True
+    if re.search(r'\binterior\b', low) and any(w in low for w in ['planta', 'ascensor', 'hab', 'dormitorio']):
+        return False
+
+    return None
+
+
 IDEALISTA_TOKEN_URL = "https://api.idealista.com/oauth/token"
 IDEALISTA_SEARCH_URL = "https://api.idealista.com/3.5/es/search"
 
@@ -379,6 +523,7 @@ def _parse_api_listing(item: dict) -> dict:
         "storage_room": bool(item.get("hasStorageRoom")),
         "condition": item.get("status"),
         "orientation": item.get("orientation"),
+        "exterior": item.get("exterior") if "exterior" in item else (True if item.get("orientation") == "exterior" else (False if item.get("orientation") == "interior" else None)),
         "listed_date": _parse_date(item.get("modificationDate") or item.get("date")),
         "broker_name": None,
         "broker_contact": None,
@@ -585,27 +730,15 @@ def _parse_idealista_html_listings(markdown: str) -> list[dict]:
         # Amenities from context
         ctx_lower = context_after.lower()
 
-        # Condition detection (check features_ctx first for precision, fallback to full ctx)
-        feat_lower = features_ctx.lower()
-        if "a reformar" in feat_lower or "para reformar" in feat_lower or "para restaurar" in feat_lower:
-            condition = "renew"
-        elif ("obra nueva" in feat_lower or "nueva construcción" in feat_lower
-              or "nueva construccion" in feat_lower or "de obra nueva" in feat_lower):
-            condition = "newdevelopment"
-        elif ("buen estado" in feat_lower or "bien conservado" in feat_lower
-              or "muy buen estado" in feat_lower or "segunda mano" in feat_lower):
-            condition = "good"
-        else:
-            condition = None
+        # Condition detection: use shared detector on features section first, then full context
+        condition = _detect_condition(features_ctx)
+        if not condition:
+            condition = _detect_condition(context_after)
 
-        # Orientation: parse "Orientación sur, oeste" from features section
-        ori_match = re.search(r'[Oo]rientaci[oó]n\s*:?\s*([^\n\*]+?)(?:\n|\*|$)', features_ctx)
-        if ori_match:
-            orientation = ori_match.group(1).strip().rstrip(',')
-        elif "exterior" in ctx_lower:
-            orientation = "exterior"
-        else:
-            orientation = None
+        # Orientation: use shared detector on features section first, then full context
+        orientation = _detect_orientation(features_ctx)
+        if not orientation:
+            orientation = _detect_orientation(context_after)
 
         listing = {
             "url": url,
@@ -628,6 +761,7 @@ def _parse_idealista_html_listings(markdown: str) -> list[dict]:
             "storage_room": "trastero" in ctx_lower,
             "condition": condition,
             "orientation": orientation,
+            "exterior": _detect_exterior(features_ctx) or _detect_exterior(context_after),
             "listed_date": date.today(),
             "broker_name": None,
             "broker_contact": None,
@@ -792,6 +926,114 @@ def _map_redpiso_listing(item: dict) -> Optional[dict]:
         # Build human-readable address from display_location
         address = item.get("display_location") or item.get("short_description") or ""
 
+        # --- Condition extraction ---
+        # Redpiso JSON may have: conservation_status, status, state, tags,
+        # features (list of dicts with name/slug), or description text.
+        condition = None
+
+        # Try structured fields first
+        for field in ("conservation_status", "conservation", "status", "state"):
+            raw_cond = item.get(field)
+            if not raw_cond:
+                raw_cond = cadastre.get(field)
+            if raw_cond:
+                if isinstance(raw_cond, dict):
+                    raw_cond = raw_cond.get("name") or raw_cond.get("slug") or ""
+                if isinstance(raw_cond, str):
+                    condition = _detect_condition(raw_cond)
+                    if condition:
+                        break
+
+        # Try features list (e.g. [{"name": "A reformar", "slug": "a-reformar"}, ...])
+        if not condition:
+            features = item.get("features") or item.get("characteristics") or []
+            if isinstance(features, list):
+                for feat in features:
+                    fname = feat.get("name") or feat.get("slug") or "" if isinstance(feat, dict) else str(feat)
+                    condition = _detect_condition(fname)
+                    if condition:
+                        break
+
+        # Try tags (e.g. ["Obra nueva", "Ascensor", ...])
+        if not condition:
+            tags = item.get("tags") or []
+            if isinstance(tags, list):
+                for tag in tags:
+                    if isinstance(tag, str):
+                        condition = _detect_condition(tag)
+                        if condition:
+                            break
+
+        # Fallback: detect from description or title text
+        if not condition:
+            desc_text = item.get("description") or item.get("short_description") or ""
+            title_text = item.get("title") or item.get("name") or ""
+            condition = _detect_condition(title_text + " " + desc_text)
+
+        # --- Orientation extraction ---
+        orientation = None
+
+        # Try structured field
+        for field in ("orientation", "orientacion"):
+            raw_ori = item.get(field)
+            if not raw_ori:
+                raw_ori = cadastre.get(field)
+            if raw_ori:
+                if isinstance(raw_ori, dict):
+                    raw_ori = raw_ori.get("name") or raw_ori.get("slug") or ""
+                if isinstance(raw_ori, str) and raw_ori.strip():
+                    orientation = raw_ori.strip()
+                    break
+
+        # Try features/tags for orientation
+        if not orientation:
+            all_feat_text = ""
+            features = item.get("features") or item.get("characteristics") or []
+            if isinstance(features, list):
+                for feat in features:
+                    fname = feat.get("name") or "" if isinstance(feat, dict) else str(feat)
+                    all_feat_text += " " + fname
+            tags = item.get("tags") or []
+            if isinstance(tags, list):
+                all_feat_text += " " + " ".join(t for t in tags if isinstance(t, str))
+            if all_feat_text.strip():
+                orientation = _detect_orientation(all_feat_text)
+
+        # Fallback: detect from description
+        if not orientation:
+            desc_text = item.get("description") or ""
+            orientation = _detect_orientation(desc_text)
+
+        # --- Floor extraction ---
+        floor_val = None
+        for field in ("floor", "planta"):
+            raw_floor = cadastre.get(field) or item.get(field)
+            if raw_floor is not None:
+                floor_val = _parse_floor(raw_floor)
+                if floor_val is not None:
+                    break
+
+        # --- Amenities extraction ---
+        # Build a combined text from features, tags, and description for amenity detection
+        amenity_text = ""
+        features = item.get("features") or item.get("characteristics") or []
+        if isinstance(features, list):
+            for feat in features:
+                fname = feat.get("name") or "" if isinstance(feat, dict) else str(feat)
+                amenity_text += " " + fname
+        tags = item.get("tags") or []
+        if isinstance(tags, list):
+            amenity_text += " " + " ".join(t for t in tags if isinstance(t, str))
+        desc_text = item.get("description") or ""
+        amenity_text += " " + desc_text
+        amenity_lower = amenity_text.lower()
+
+        elevator = "ascensor" in amenity_lower
+        garage = "garaje" in amenity_lower or "parking" in amenity_lower or "plaza de garaje" in amenity_lower
+        terrace = "terraza" in amenity_lower
+        balcony = "balcón" in amenity_lower or "balcon" in amenity_lower
+        storage_room = "trastero" in amenity_lower
+
         return {
             "url": url,
             "address": address,
@@ -805,14 +1047,15 @@ def _map_redpiso_listing(item: dict) -> Optional[dict]:
             "size_sqm": next((float(cadastre[k]) for k in ("usable_meters", "meters", "property_meters") if cadastre.get(k)), None),
             "bedrooms": int(cadastre["bedrooms"]) if cadastre.get("bedrooms") else None,
             "bathrooms": int(cadastre["bathrooms"]) if cadastre.get("bathrooms") else None,
-            "floor": None,
-            "elevator": False,
-            "garage": False,
-            "terrace": False,
-            "balcony": False,
-            "storage_room": False,
-            "condition": None,
-            "orientation": None,
+            "floor": floor_val,
+            "elevator": elevator,
+            "garage": garage,
+            "terrace": terrace,
+            "balcony": balcony,
+            "storage_room": storage_room,
+            "condition": condition,
+            "orientation": orientation,
+            "exterior": _detect_exterior(amenity_text),
             "listed_date": date.today(),
             "broker_name": office.get("name"),
             "broker_contact": office.get("phone"),
@@ -904,6 +1147,37 @@ def _parse_fotocasa_listings(markdown: str) -> list[dict]:
         district = parts[-1] if len(parts) > 1 else None
         address = address_raw
 
+        # --- Zone extraction ---
+        # Fotocasa URLs contain the barrio slug:
+        # .../comprar/vivienda/madrid-capital/barrio-name/12345/
+        # Address may also have "barrio, district" structure.
+        zone = None
+
+        # Try extracting zone from URL slug
+        # Pattern: /madrid-capital/ZONE-SLUG/ or /madrid/ZONE-SLUG/
+        url_zone_match = re.search(
+            r'/madrid(?:-capital)?/([a-z0-9-]+)/\d+',
+            url.lower(),
+        )
+        if url_zone_match:
+            zone_slug = url_zone_match.group(1)
+            # Convert slug to readable name: "palacio-de-oriente" → "Palacio De Oriente"
+            zone = zone_slug.replace('-', ' ').title()
+
+        # If no zone from URL, try the address parts
+        # Address format: "Calle X, Barrio, Distrito" → barrio is middle part
+        if not zone and len(parts) >= 3:
+            zone = parts[-2]  # penultimate part is often the barrio
+        elif not zone and len(parts) == 2:
+            # "Barrio, Distrito" → first part could be the zone
+            # Only use it if it's not a street name
+            candidate = parts[0]
+            if not any(kw in candidate.lower() for kw in [
+                "calle", "avenida", "paseo", "plaza", "ronda",
+                "travesía", "travesia", "camino",
+            ]):
+                zone = candidate
+
         # Amenities/condition/orientation from the full block and Características section
         features_lower = features_text.lower()
         block_lower = block.lower()
@@ -946,7 +1220,7 @@ def _parse_fotocasa_listings(markdown: str) -> list[dict]:
             if asc_m:
                 elevator = asc_m.group(1).lower() in ("sí", "si")
 
-            # Orientación → orientation
+            # Orientación → orientation (from Características section)
             ori_m = re.search(
                 r'\bOrientaci[oó]n\b[^\n]*\n+\s*\**\s*([^\n\*\[]+)',
                 caract_ctx,
@@ -954,11 +1228,19 @@ def _parse_fotocasa_listings(markdown: str) -> list[dict]:
             if ori_m:
                 orientation = ori_m.group(1).strip()
 
+        # Fallback condition detection: scan description/features text with shared detector
+        if not condition:
+            condition = _detect_condition(block)
+
+        # Fallback orientation detection from full block text
+        if not orientation:
+            orientation = _detect_orientation(block)
+
         listing = {
             "url": url,
             "address": address,
             "district": district,
-            "zone": None,
+            "zone": zone,
             "city": "Madrid",
             "country": "Spain",
             "property_type": property_type_raw.lower(),
@@ -975,6 +1257,7 @@ def _parse_fotocasa_listings(markdown: str) -> list[dict]:
             "storage_room": "trastero" in block_lower,
             "condition": condition,
             "orientation": orientation,
+            "exterior": _detect_exterior(block),
             "listed_date": date.today(),
             "broker_name": None,
             "broker_contact": None,
@@ -1080,11 +1363,12 @@ def _parse_pisos_listings(markdown: str) -> list[dict]:
         if '/comprar/' not in url:
             continue
 
-        # Get context: 200 chars before (for price) and 400 chars after (for features)
+        # Get context: 200 chars before (for price) and 1500 chars after
+        # (description, features, and characteristics sections)
         start = title_match.start()
         end = title_match.end()
         context_before = markdown[max(0, start - 200):start]
-        context_after = markdown[end:end + 400]
+        context_after = markdown[end:end + 1500]
 
         # Price: look for N.NNN.NNN € in the lines before the title
         price_match = _RE_PRICE.search(context_before)
@@ -1126,36 +1410,22 @@ def _parse_pisos_listings(markdown: str) -> list[dict]:
                 address = title_text[len(prefix):]
                 break
 
-        # Condition from title + context text
-        condition = None
-        text_lower = (title_text + ' ' + context_after).lower()
-        if any(k in text_lower for k in ['a reformar', 'para reformar', 'para restaurar', 'necesita reforma']):
-            condition = 'renew'
-        elif any(k in text_lower for k in ['obra nueva', 'nueva construcción', 'nueva construccion', 'de obra nueva']):
-            condition = 'newdevelopment'
-        elif any(k in text_lower for k in ['buen estado', 'bien conservado', 'muy buen estado', 'segunda mano']):
-            condition = 'good'
+        # Combined text for condition/orientation/amenity detection
+        combined_text = title_text + " " + context_after
 
-        # Orientation from context text
-        orientation = None
-        orient_lower = context_after.lower()
-        for kw, val in [
-            ('noreste', 'noreste'), ('noroeste', 'noroeste'),
-            ('sureste', 'sureste'), ('suroeste', 'suroeste'),
-            ('norte', 'norte'), ('sur', 'sur'),
-            ('este', 'este'), ('oeste', 'oeste'),
-            ('exterior', 'exterior'),
-        ]:
-            if kw in orient_lower:
-                orientation = val
-                break
+        # Condition: use shared detector on expanded context
+        condition = _detect_condition(combined_text)
 
-        # Amenities from context
-        elevator = 'ascensor' in text_lower
-        terrace = 'terraza' in text_lower
-        balcony = 'balcón' in text_lower or 'balcon' in text_lower
-        storage_room = 'trastero' in text_lower
-        garage = 'garaje' in text_lower or 'parking' in text_lower or 'garage' in text_lower
+        # Orientation: use shared detector on expanded context
+        orientation = _detect_orientation(combined_text)
+
+        # Amenities from expanded context
+        text_lower = combined_text.lower()
+        elevator = "ascensor" in text_lower
+        terrace = "terraza" in text_lower
+        balcony = "balcón" in text_lower or "balcon" in text_lower
+        storage_room = "trastero" in text_lower
+        garage = "garaje" in text_lower or "parking" in text_lower or "garage" in text_lower
 
         listing = {
             "url": url,
@@ -1178,6 +1448,7 @@ def _parse_pisos_listings(markdown: str) -> list[dict]:
             "storage_room": storage_room,
             "condition": condition,
             "orientation": orientation,
+            "exterior": _detect_exterior(combined_text),
             "listed_date": date.today(),
             "broker_name": None,
             "broker_contact": None,
@@ -1276,7 +1547,7 @@ def ingest_listings(db: Session, listings: list[dict]) -> int:
     # Fields always overwritten with the latest scraped value
     OVERWRITE_FIELDS = [
         "asking_price", "storage_room", "terrace", "balcony",
-        "elevator", "garage",
+        "elevator", "garage", "exterior",
     ]
 
     # Normalise district names to Madrid's 21 canonical districts

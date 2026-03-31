@@ -17,6 +17,7 @@ def deal_to_features(deal: Deal) -> Dict[str, Any]:
         "Balcon": 1 if getattr(deal, "balcony", False) else 0,
         "Ascensor": 1 if getattr(deal, "elevator", False) else 0,
         "Garaje": 1 if getattr(deal, "garage", False) else 0,
+        "Exterior": 1 if getattr(deal, "exterior", None) is True else 0,
         "Distrito": getattr(deal, "district", "") or "",
         "Zona": getattr(deal, "zone", "") or "",
         "Estado": getattr(deal, "condition", "") or "",

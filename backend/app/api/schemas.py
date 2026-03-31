@@ -53,6 +53,7 @@ class DealBase(BaseModel):
     balcony: Optional[bool] = False
     elevator: Optional[bool] = False
     garage: Optional[bool] = False
+    exterior: Optional[bool] = None
     listed_date: Optional[date] = None
     postal_code: Optional[str] = None
 

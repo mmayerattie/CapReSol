@@ -69,6 +69,7 @@ class Deal(Base):
     balcony = Column(Boolean, default=False)
     elevator = Column(Boolean, default=False)
     garage = Column(Boolean, default=False)
+    exterior = Column(Boolean)
     listed_date = Column(Date)
     postal_code = Column(String(5))
     created_at = Column(DateTime, server_default=func.now())
