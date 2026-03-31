@@ -1,3 +1,5 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -15,6 +17,32 @@ class RetrainResult(BaseModel):
     r2_cv_std: float
     mae: float
     model_version: str
+
+
+class ModelMetrics(BaseModel):
+    model: str
+    r2_test: float
+    mae: float
+    rmse: float
+    mape: float
+    r2_cv_mean: float
+    r2_cv_std: float
+
+
+class CompareResult(BaseModel):
+    deals_trained: int
+    models: List[ModelMetrics]
+    best_model: str
+
+
+@router.post("/compare", response_model=CompareResult)
+def compare_models(db: Session = Depends(get_db)):
+    """Train and compare Linear Regression, Random Forest, Gradient Boosting, and XGBoost."""
+    from app.ml.compare_models import compare
+    result = compare(db_session=db)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 
 @router.post("/retrain", response_model=RetrainResult)

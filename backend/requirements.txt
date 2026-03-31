@@ -10,6 +10,7 @@ bcrypt
 pandas
 numpy
 scikit-learn
+xgboost
 joblib
 scipy
 numpy_financial
