@@ -42,6 +42,7 @@ export interface Deal {
   balcony?: boolean
   elevator?: boolean
   garage?: boolean
+  exterior?: boolean | null
   broker_name?: string
   broker_contact?: string
   listed_date?: string

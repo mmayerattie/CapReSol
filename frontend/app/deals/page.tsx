@@ -30,6 +30,8 @@ const ALL_COLUMNS = [
   { key: 'price_per_sqm', label: '€/m²' },
   { key: 'condition', label: 'Estado' },
   { key: 'amenities', label: 'Amenidades' },
+  { key: 'exterior', label: 'Ext/Int' },
+  { key: 'orientation', label: 'Orientación' },
   { key: 'source', label: 'Fuente' },
   { key: 'listed_date', label: 'Fecha Listing' },
 ] as const
@@ -710,6 +712,13 @@ function DealsPageInner() {
                     </FilterTh>
                   )}
 
+                  {visibleCols.includes('exterior') && (
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Ext/Int</th>
+                  )}
+                  {visibleCols.includes('orientation') && (
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Orientación</th>
+                  )}
+
                   {visibleCols.includes('source') && (
                     <FilterTh label="Fuente" filterKey="fuente" openFilter={openFilter} setOpenFilter={setOpenFilter}
                       active={filterSources.size > 0 || filterIncludeNullSource}>
@@ -774,6 +783,14 @@ function DealsPageInner() {
                         <td className="px-4 py-2">
                           <AmenityBadges deal={deal} />
                         </td>
+                      )}
+                      {visibleCols.includes('exterior') && (
+                        <td className="px-4 py-2 text-sm text-center whitespace-nowrap">
+                          {deal.exterior === true ? <span className="text-green-600 font-medium">Ext</span> : deal.exterior === false ? <span className="text-gray-400">Int</span> : <span className="text-gray-300">—</span>}
+                        </td>
+                      )}
+                      {visibleCols.includes('orientation') && (
+                        <td className="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{deal.orientation ?? '—'}</td>
                       )}
                       {visibleCols.includes('source') && (
                         <td className="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{getSource(deal.url)}</td>

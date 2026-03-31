@@ -356,3 +356,12 @@ def backfill_postal_codes(db: Session = Depends(get_db)):
         "total_updated": total_updated,
         "coverage": f"{with_postal}/{total_deals} ({100*with_postal/total_deals:.1f}%)",
     }
+
+
+# ---------- Zone cleanup ----------
+
+@router.post("/cleanup-zones")
+def cleanup_zones(db: Session = Depends(get_db)):
+    """Null out zone values that contain amenity keywords (bad Fotocasa scrapes)."""
+    from scripts.cleanup_bad_zones import cleanup
+    return cleanup(db)

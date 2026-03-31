@@ -1148,35 +1148,17 @@ def _parse_fotocasa_listings(markdown: str) -> list[dict]:
         address = address_raw
 
         # --- Zone extraction ---
-        # Fotocasa URLs contain the barrio slug:
-        # .../comprar/vivienda/madrid-capital/barrio-name/12345/
-        # Address may also have "barrio, district" structure.
+        # Only use the URL slug, which is the one reliable source for barrio
+        # in Fotocasa. The address field often contains amenity text mixed in,
+        # so we never extract zone from address parts.
         zone = None
-
-        # Try extracting zone from URL slug
-        # Pattern: /madrid-capital/ZONE-SLUG/ or /madrid/ZONE-SLUG/
         url_zone_match = re.search(
             r'/madrid(?:-capital)?/([a-z0-9-]+)/\d+',
             url.lower(),
         )
         if url_zone_match:
             zone_slug = url_zone_match.group(1)
-            # Convert slug to readable name: "palacio-de-oriente" → "Palacio De Oriente"
             zone = zone_slug.replace('-', ' ').title()
-
-        # If no zone from URL, try the address parts
-        # Address format: "Calle X, Barrio, Distrito" → barrio is middle part
-        if not zone and len(parts) >= 3:
-            zone = parts[-2]  # penultimate part is often the barrio
-        elif not zone and len(parts) == 2:
-            # "Barrio, Distrito" → first part could be the zone
-            # Only use it if it's not a street name
-            candidate = parts[0]
-            if not any(kw in candidate.lower() for kw in [
-                "calle", "avenida", "paseo", "plaza", "ronda",
-                "travesía", "travesia", "camino",
-            ]):
-                zone = candidate
 
         # Amenities/condition/orientation from the full block and Características section
         features_lower = features_text.lower()
