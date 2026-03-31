@@ -106,7 +106,7 @@ def _run_experiment(df, y, label=""):
     return results
 
 
-def compare(db_session=None) -> dict:
+def compare(db_session=None, experiment: str = "a") -> dict:
     rows, targets = build_dataset(db_session)
     if len(rows) < 50:
         return {"error": "Not enough data", "deals": len(rows)}
@@ -114,30 +114,23 @@ def compare(db_session=None) -> dict:
     y_raw = np.array(targets, dtype=float)
     y = np.log1p(y_raw)
 
-    # Experiment A: baseline (all zones as-is)
-    print("=== Experiment A: Baseline (all zones) ===")
-    df_a = _prepare_df(rows, zone_threshold=0)
-    print(f"  Features: {df_a.shape[1]} columns")
-    results_a = _run_experiment(df_a, y, label="[A]")
+    if experiment == "b":
+        print(f"=== Experiment B: Zone cleanup (threshold={MIN_ZONE_FREQUENCY}) ===")
+        df = _prepare_df(rows, zone_threshold=MIN_ZONE_FREQUENCY)
+        desc = f"Zones with <{MIN_ZONE_FREQUENCY} deals mapped to empty"
+    else:
+        print("=== Experiment A: Baseline (all zones) ===")
+        df = _prepare_df(rows, zone_threshold=0)
+        desc = "All zones kept as-is"
 
-    # Experiment B: rare zone cleanup (zones with < 10 deals → empty)
-    print(f"\n=== Experiment B: Zone cleanup (threshold={MIN_ZONE_FREQUENCY}) ===")
-    df_b = _prepare_df(rows, zone_threshold=MIN_ZONE_FREQUENCY)
-    print(f"  Features: {df_b.shape[1]} columns")
-    results_b = _run_experiment(df_b, y, label="[B]")
+    print(f"  Features: {df.shape[1]} columns")
+    results = _run_experiment(df, y, label=f"[{experiment.upper()}]")
 
     return {
         "deals_trained": len(rows),
-        "experiment_a_baseline": {
-            "description": "All zones kept as-is",
-            "features": df_a.shape[1],
-            "models": results_a,
-            "best": results_a[0]["model"],
-        },
-        "experiment_b_zone_cleanup": {
-            "description": f"Zones with <{MIN_ZONE_FREQUENCY} deals mapped to empty",
-            "features": df_b.shape[1],
-            "models": results_b,
-            "best": results_b[0]["model"],
-        },
+        "experiment": experiment,
+        "description": desc,
+        "features": df.shape[1],
+        "models": results,
+        "best_model": results[0]["model"],
     }

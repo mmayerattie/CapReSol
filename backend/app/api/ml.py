@@ -35,11 +35,11 @@ class CompareResult(BaseModel):
     best_model: str
 
 
-@router.post("/compare", response_model=CompareResult)
-def compare_models(db: Session = Depends(get_db)):
-    """Train and compare Linear Regression, Random Forest, Gradient Boosting, and XGBoost."""
+@router.post("/compare")
+def compare_models(experiment: str = "a", db: Session = Depends(get_db)):
+    """Train and compare models. experiment='a' for baseline, 'b' for zone cleanup."""
     from app.ml.compare_models import compare
-    result = compare(db_session=db)
+    result = compare(db_session=db, experiment=experiment)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
