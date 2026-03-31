@@ -365,3 +365,20 @@ def cleanup_zones(db: Session = Depends(get_db)):
     """Null out zone values that contain amenity keywords (bad Fotocasa scrapes)."""
     from scripts.cleanup_bad_zones import cleanup
     return cleanup(db)
+
+
+# ---------- Detail fields backfill ----------
+
+@router.post("/backfill-details")
+def backfill_details(
+    limit: int = 100,
+    portal: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Visit individual listing detail pages via Firecrawl to fill
+    missing condition, exterior, and orientation fields.
+    Skips Redpiso (no detail data). Handles expired listings gracefully.
+    """
+    from scripts.backfill_detail_fields import backfill
+    return backfill(db=db, limit=limit, portal_filter=portal)
