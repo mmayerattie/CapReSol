@@ -86,8 +86,14 @@ function DealPickerModal({
   const totalPages = Math.ceil(visible.length / PAGE_SIZE)
   const paged = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
+  const MAX_BULK = 25
+
   async function handleTasar() {
     if (selected.size === 0) return
+    if (selected.size > MAX_BULK) {
+      setPredictError(`Maximo ${MAX_BULK} predicciones a la vez. Seleccionaste ${selected.size}.`)
+      return
+    }
     setPredicting(true)
     setPredictError('')
     try {
@@ -101,7 +107,6 @@ function DealPickerModal({
   }
 
   const checkboxCls = 'w-3.5 h-3.5 accent-blue-600 cursor-pointer'
-  const rowCls = 'flex items-center gap-2 px-1 py-1 rounded hover:bg-gray-50 cursor-pointer text-xs font-normal normal-case text-gray-700'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -204,10 +209,10 @@ function DealPickerModal({
           {predictError && <span className="text-xs text-red-600">{predictError}</span>}
           <button
             onClick={handleTasar}
-            disabled={predicting || selected.size === 0}
+            disabled={predicting || selected.size === 0 || selected.size > MAX_BULK}
             className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-blue-700"
           >
-            {predicting ? 'Tasando…' : `Tasar ${selected.size} seleccionado${selected.size !== 1 ? 's' : ''}`}
+            {predicting ? 'Tasando...' : selected.size > MAX_BULK ? `Max ${MAX_BULK} (${selected.size} selec.)` : `Tasar ${selected.size} seleccionado${selected.size !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>
@@ -225,11 +230,18 @@ export default function ValuacionesPage() {
   const [showModal, setShowModal] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
 
   function load() {
     setLoading(true)
-    getPredictions().then(setPredictions).finally(() => setLoading(false))
+    getPredictions().then(data => {
+      // Sort by created_at descending so newest predictions appear first
+      data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      setPredictions(data)
+    }).finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
@@ -238,10 +250,49 @@ export default function ValuacionesPage() {
     try {
       await deletePrediction(id)
       setPredictions(prev => prev.filter(p => p.id !== id))
+      setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
       setConfirmDeleteId(null)
     } catch (e: unknown) {
       setDeleteError(e instanceof Error ? e.message : 'Error al eliminar')
       setTimeout(() => setDeleteError(''), 4000)
+    }
+  }
+
+  async function handleDeleteSelected() {
+    setDeleting(true)
+    try {
+      const ids = Array.from(selected)
+      for (const id of ids) {
+        await deletePrediction(id)
+      }
+      setPredictions(prev => prev.filter(p => !selected.has(p.id)))
+      setSuccessMsg(`${ids.length} tasacion${ids.length !== 1 ? 'es' : ''} eliminada${ids.length !== 1 ? 's' : ''}`)
+      setTimeout(() => setSuccessMsg(''), 4000)
+      setSelected(new Set())
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e.message : 'Error al eliminar')
+      setTimeout(() => setDeleteError(''), 4000)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  async function handleDeleteAll() {
+    setDeleting(true)
+    try {
+      for (const p of predictions) {
+        await deletePrediction(p.id)
+      }
+      setPredictions([])
+      setSelected(new Set())
+      setConfirmDeleteAll(false)
+      setSuccessMsg('Todas las tasaciones eliminadas')
+      setTimeout(() => setSuccessMsg(''), 4000)
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e.message : 'Error al eliminar')
+      setTimeout(() => setDeleteError(''), 4000)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -251,6 +302,8 @@ export default function ValuacionesPage() {
     setTimeout(() => setSuccessMsg(''), 4000)
     load()
   }
+
+  const allSelected = predictions.length > 0 && selected.size === predictions.length
 
   return (
     <div>
@@ -268,35 +321,69 @@ export default function ValuacionesPage() {
         </div>
         <div className="flex items-center gap-3">
           {successMsg && <span className="text-sm text-emerald-600">{successMsg}</span>}
+          {selected.size > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              disabled={deleting}
+              className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-md text-xs font-medium hover:bg-red-100 disabled:opacity-40"
+            >
+              {deleting ? 'Eliminando...' : `Eliminar ${selected.size} seleccionada${selected.size !== 1 ? 's' : ''}`}
+            </button>
+          )}
+          {predictions.length > 0 && selected.size === 0 && (
+            confirmDeleteAll ? (
+              <span className="flex items-center gap-2 text-xs">
+                <button onClick={handleDeleteAll} disabled={deleting}
+                  className="text-red-600 font-medium hover:underline disabled:opacity-40">
+                  {deleting ? 'Eliminando...' : 'Confirmar eliminar todo'}
+                </button>
+                <button onClick={() => setConfirmDeleteAll(false)}
+                  className="text-gray-400 hover:text-gray-600">Cancelar</button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmDeleteAll(true)}
+                className="px-3 py-1.5 text-gray-400 border border-gray-200 rounded-md text-xs hover:text-red-500 hover:border-red-200"
+              >
+                Eliminar todo
+              </button>
+            )
+          )}
           <button
             onClick={() => setShowModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
           >
-            + Nueva Valuación
+            + Nueva Valuacion
           </button>
         </div>
       </div>
       {deleteError && <p className="text-red-500 text-sm mt-2 mb-4">{deleteError}</p>}
 
       {loading ? (
-        <p className="text-gray-400">Cargando…</p>
+        <p className="text-gray-400">Cargando...</p>
       ) : predictions.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
-          <p className="text-lg mb-2">Sin tasaciones todavía</p>
-          <p className="text-sm">Haz clic en <span className="font-medium text-gray-600">"+ Nueva Valuación"</span> para seleccionar propiedades y ejecutar el modelo ML.</p>
+          <p className="text-lg mb-2">Sin tasaciones todavia</p>
+          <p className="text-sm">Haz clic en <span className="font-medium text-gray-600">"+ Nueva Valuacion"</span> para seleccionar propiedades y ejecutar el modelo ML.</p>
         </div>
       ) : (
         <div className="overflow-auto rounded-lg border border-gray-200 bg-white">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
               <tr>
-                <th className="px-4 py-3 text-left">Dirección</th>
+                <th className="px-4 py-3 w-8">
+                  <input type="checkbox"
+                    className="w-3.5 h-3.5 accent-blue-600"
+                    checked={allSelected}
+                    onChange={() => setSelected(allSelected ? new Set() : new Set(predictions.map(p => p.id)))} />
+                </th>
+                <th className="px-4 py-3 text-left">Direccion</th>
                 <th className="px-4 py-3 text-left">Distrito</th>
-                <th className="px-4 py-3 text-right">m²</th>
+                <th className="px-4 py-3 text-right">m2</th>
                 <th className="px-4 py-3 text-right">Ask Price</th>
-                <th className="px-4 py-3 text-right">Ask €/m²</th>
-                <th className="px-4 py-3 text-right">Tasación ML</th>
-                <th className="px-4 py-3 text-right">ML €/m²</th>
+                <th className="px-4 py-3 text-right">Ask EUR/m2</th>
+                <th className="px-4 py-3 text-right">Tasacion ML</th>
+                <th className="px-4 py-3 text-right">ML EUR/m2</th>
                 <th className="px-4 py-3 text-left">Spread</th>
                 <th className="px-4 py-3 text-left">Estado</th>
                 <th className="px-4 py-3 text-left">Fecha</th>
@@ -310,7 +397,13 @@ export default function ValuacionesPage() {
                 const mlPsqm = p.size_sqm ? p.predicted_price / p.size_sqm : null
                 const dateStr = new Date(p.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' })
                 return (
-                  <tr key={p.id} className="hover:bg-gray-50">
+                  <tr key={p.id} className={`hover:bg-gray-50 ${selected.has(p.id) ? 'bg-blue-50' : ''}`}>
+                    <td className="px-4 py-2 text-center">
+                      <input type="checkbox"
+                        className="w-3.5 h-3.5 accent-blue-600"
+                        checked={selected.has(p.id)}
+                        onChange={() => setSelected(prev => toggleSet(prev, p.id))} />
+                    </td>
                     <td className="px-4 py-2 max-w-xs truncate">
                       {p.url ? (
                         <a href={p.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
@@ -320,10 +413,10 @@ export default function ValuacionesPage() {
                     </td>
                     <td className="px-4 py-2 text-gray-600 text-xs">{p.district || '—'}</td>
                     <td className="px-4 py-2 text-right">{fmt(p.size_sqm)}</td>
-                    <td className="px-4 py-2 text-right font-medium">{p.asking_price ? `€${fmt(p.asking_price)}` : '—'}</td>
-                    <td className="px-4 py-2 text-right text-gray-500">{askPsqm ? `€${fmt(askPsqm)}` : '—'}</td>
-                    <td className="px-4 py-2 text-right font-semibold text-emerald-700">{`€${fmt(p.predicted_price)}`}</td>
-                    <td className="px-4 py-2 text-right text-emerald-600">{mlPsqm ? `€${fmt(mlPsqm)}` : '—'}</td>
+                    <td className="px-4 py-2 text-right font-medium">{p.asking_price ? `EUR${fmt(p.asking_price)}` : '—'}</td>
+                    <td className="px-4 py-2 text-right text-gray-500">{askPsqm ? `EUR${fmt(askPsqm)}` : '—'}</td>
+                    <td className="px-4 py-2 text-right font-semibold text-emerald-700">{`EUR${fmt(p.predicted_price)}`}</td>
+                    <td className="px-4 py-2 text-right text-emerald-600">{mlPsqm ? `EUR${fmt(mlPsqm)}` : '—'}</td>
                     <td className="px-4 py-2">
                       <SpreadBadge ask={p.asking_price} ml={p.predicted_price} />
                     </td>
@@ -332,7 +425,7 @@ export default function ValuacionesPage() {
                     <td className="px-4 py-2">
                       <Link href={`/analyses?deal_id=${p.deal_id}`}
                         className="text-xs text-gray-400 hover:text-blue-600 hover:underline whitespace-nowrap">
-                        Analizar →
+                        Analizar
                       </Link>
                     </td>
                     <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
@@ -351,9 +444,9 @@ export default function ValuacionesPage() {
                       ) : (
                         <button
                           onClick={() => setConfirmDeleteId(p.id)}
-                          title="Eliminar tasación"
+                          title="Eliminar tasacion"
                           className="text-gray-300 hover:text-red-500 transition-colors"
-                        >🗑</button>
+                        >&#128465;</button>
                       )}
                     </td>
                   </tr>
