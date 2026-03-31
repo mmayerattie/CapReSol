@@ -79,7 +79,7 @@ def compare(db_session=None) -> dict:
         r2 = float(r2_score(y_test_orig, y_pred))
         mae = float(mean_absolute_error(y_test_orig, y_pred))
         rmse = float(np.sqrt(mean_squared_error(y_test_orig, y_pred)))
-        mape = _mape(y_test_orig.values, y_pred)
+        mape = _mape(np.array(y_test_orig), np.array(y_pred))
 
         # 5-fold CV
         cv = cross_val_score(model, X_all_s, y, cv=5, scoring="r2")
