@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CapReSol is a real estate investment analysis system for Madrid-focused funds. Six core capabilities:
 1. **Portal scraping** — automated ingestion from 5 sources (Idealista API, Idealista HTML, Redpiso, Fotocasa, Pisos.com) into PostgreSQL
-2. **ML valuation** — Gradient Boosting model predicts market price from property features (log-transformed, 5-fold CV)
-3. **Fix & Flip analysis** — user inputs investment parameters, system returns IRR, ROE, Equity Multiple, Gross Margin
+2. **ML valuation** — Gradient Boosting model (best of 4 tested: LR, RF, GB, XGB) predicts market price from 15 features. R-squared 0.883 CV on 4,425 deals. Zone cardinality reduction applied.
+3. **Fix & Flip analysis** — user evaluates investment opportunities with IRR, ROE, MOIC, Gross Margin from monthly equity cash flows with leverage
 4. **Notary data** — real transaction closing prices from penotariado.com (ArcGIS API), 55 Madrid postal codes, 9 filter combinations
-5. **Analytics dashboard** — opportunity-focused: 3 upside charts, negotiation margins, ML spread, condition distribution
+5. **Analytics dashboard** — opportunity-focused: 3 upside charts, negotiation margins, ML spread, condition distribution, opportunity scoring
 6. **Multi-user auth** — JWT-based authentication with 6 user accounts, deployed on Railway + Vercel
 
 ## Important: Git Policy
@@ -47,6 +47,28 @@ cd frontend && npm run dev    # http://localhost:3000
 ```bash
 cd backend && python -m app.ml.train    # Manual retrain from CLI
 # Or via API: POST /ml/retrain (clears lru_cache automatically)
+# Model comparison: POST /ml/compare?experiment=a (or b, c, c2, d)
+```
+
+### Production API calls (all need trailing-slash awareness — Railway 307 redirects)
+```bash
+# Authenticate
+TOKEN=$(curl -s -X POST "https://capresol-production.up.railway.app/auth/login" -H "Content-Type: application/json" -d '{"username":"Admin","password":"Capstone26100"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Retrain ML model
+curl -s -L -X POST "https://capresol-production.up.railway.app/ml/retrain" -H "Authorization: Bearer $TOKEN"
+
+# Compare models (experiment a=baseline, b=drop zone, c=impute good, c2=impute segunda_mano, d=price/sqm target)
+curl -s -L -X POST "https://capresol-production.up.railway.app/ml/compare?experiment=a" -H "Authorization: Bearer $TOKEN"
+
+# Backfill postal codes
+curl -s -L -X POST "https://capresol-production.up.railway.app/deals/backfill-postal-codes" -H "Authorization: Bearer $TOKEN"
+
+# Backfill condition/exterior/orientation from detail pages (uses Firecrawl credits)
+curl -s -L -X POST "https://capresol-production.up.railway.app/deals/backfill-details?limit=30" -H "Authorization: Bearer $TOKEN"
+
+# Cleanup bad zone values
+curl -s -L -X POST "https://capresol-production.up.railway.app/deals/cleanup-zones" -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Production Deployment
@@ -63,14 +85,14 @@ cd backend && python -m app.ml.train    # Manual retrain from CLI
 - `PYTHONPATH=/app` for alembic module resolution
 - `config.py` auto-converts Railway's `postgresql://` to `postgresql+psycopg2://`
 - Users seeded automatically on every deploy from `USERS_CONFIG` (idempotent)
+- **IMPORTANT**: Railway has HTTP request timeout. ML compare endpoint must run one experiment at a time (4 models max). Use `?experiment=a` parameter.
 
 ### Frontend (Vercel)
 - Root directory: `frontend`
 - `NEXT_PUBLIC_API_URL` env var set to Railway HTTPS URL (all environments)
-- `lib/api.ts` calls Railway directly (not via Next.js rewrites) — Vercel rewrites to external URLs behave as client-visible redirects causing Mixed Content
+- `lib/api.ts` calls Railway directly (not via Next.js rewrites)
 - HTTP→HTTPS forced in code, skipped for localhost
 - `middleware.ts` excludes `/api` routes from auth check
-- `.env.local` (git-ignored) sets `NEXT_PUBLIC_API_URL=http://localhost:8000` for local dev
 
 ### Railway Environment Variables
 ```
@@ -104,124 +126,130 @@ penotariado.com ArcGIS API → notary_stats table (55 postal codes × 9 combos)
 
 ### Backend (`backend/app/`)
 
-**Entry point**: `main.py` — FastAPI app with CORS middleware (`allow_origins` from env, `allow_credentials=True`), mounts routers: `/auth`, `/messages`, `/deals`, `/analyses`, `/analytics`, `/ml`, `/notary`.
-
-**Authentication** (`api/auth.py`):
-- `POST /auth/login` — accepts `{username, password}`, returns `{access_token, token_type}`
-- `get_current_user` dependency — validates Bearer JWT
-- All routers protected except `/auth/login` and `GET /`
-- bcrypt password hashing, 7-day JWT expiry
+**Entry point**: `main.py` — FastAPI app with CORS middleware, mounts routers: `/auth`, `/messages`, `/deals`, `/analyses`, `/analytics`, `/ml`, `/notary`.
 
 **Database models** (`db/models.py`):
 - `User` — id, username, hashed_password, created_at
-- `Deal` — full field list: address, city, country, property_type, size_sqm, bedrooms, bathrooms, floor, asking_price, currency, url (unique), broker_name, broker_contact, district, zone, condition, orientation, storage_room, terrace, balcony, elevator, garage, listed_date, postal_code
+- `Deal` — 26 fields including: address, city, property_type, size_sqm, bedrooms, bathrooms, floor, asking_price, url (unique), broker_name, broker_contact, district, zone, condition, orientation, storage_room, terrace, balcony, elevator, garage, **exterior** (boolean, added 2026-03-31), listed_date, postal_code
 - `Prediction` — predicted_price, model_version, FK to deal
 - `FinancialAnalysis` — all FlipInput fields + computed outputs
-- `NotaryStat` — postal_code, construction_type (todos/nueva/segunda_mano), property_class (todos/pisos/casas), notary_price_sqm, notary_avg_price, notary_avg_surface, notary_transactions, notary_total
+- `NotaryStat` — postal_code, construction_type, property_class, notary_price_sqm, notary_avg_price, notary_avg_surface, notary_transactions, notary_total
 
 **API layer** (`api/`):
 - `auth.py` — login + get_current_user
-- `deals.py` — `GET /deals`, `POST /deals/scrape`, `POST /deals/predict` (batch), `DELETE /deals/predictions/{id}`
+- `deals.py` — `GET /deals`, `POST /deals/scrape`, `POST /deals/predict` (batch, max 25), `DELETE /deals/predictions/{id}`, `POST /deals/backfill-postal-codes`, `POST /deals/backfill-details?limit=&portal=`, `POST /deals/cleanup-zones`
 - `analyses.py` — CRUD for Fix & Flip analyses
 - `analytics.py` — `GET /analytics?max_price_sqm=&min_price_sqm=&notary_construction=&notary_class=`
-  - Returns: by_district (with avg_price_renew, avg_price_good, avg_price_new, avg_size_renew, n_renew, n_good, n_new), notary_by_district (unified filtered), notary_prices_by_type (segunda_mano + nueva per district), opportunity_table, condition_by_district, histograms, amenities, timeline, portfolio
-  - Unified filters: notary_construction maps to deal conditions (segunda_mano → renew+good, nueva → newdevelopment), notary_class maps to deal property_type
-- `ml.py` — `POST /ml/retrain` — retrains model, clears lru_cache, returns metrics
+- `ml.py` — `POST /ml/retrain`, `POST /ml/compare?experiment=a|b|c|c2|d`
 - `notary.py` — `POST /notary/scrape`, `GET /notary?construction_type=&property_class=`
 - `messages.py` — message CRUD
 - `schemas.py` — all Pydantic models
 
 **Scraping** (`services/portal_scraper.py`):
 - 5 scrapers: Idealista API, Idealista HTML (Firecrawl), Redpiso JSON, Fotocasa (Firecrawl), Pisos.com (Firecrawl)
+- Shared helpers: `_detect_condition()` (13 Spanish keyword variants), `_detect_exterior()` (context-aware), `_detect_orientation()` (structured + fallback)
 - `normalize_district()` — ~150 barrio→district mappings
 - `extract_postal_code()` — regex + ZONE_TO_POSTAL fallback (131 barrios)
-- `ingest_listings()` — upsert + auto ML prediction on new deals (`_auto_predict_new_deals`)
-- Idealista HTML: context window 3000 chars, features sub-window 1200 chars, fallback regex for bathrooms/floor/orientation
+- `ingest_listings()` — upsert with COALESCE (preserve non-null) + OVERWRITE (price, amenities, exterior)
+- Fotocasa zone: extracted from URL slug only (address fallback removed — was grabbing amenities as zone)
+- **Known limitation**: Redpiso API has NO condition, orientation, floor, or amenity data. These can only be obtained by scraping individual detail pages via Firecrawl.
 
-**Notary scraper** (`services/notary_scraper.py`):
-- Source: `https://services-eu1.arcgis.com/UpPGybwp9RK4YtZj/arcgis/rest/services/agol_precio_m2/FeatureServer/4/query`
-- Layer 4 = Codigo Postal level
-- Filter IDs: tipo_construccion_id (7=nueva, 9=segunda_mano, 99=todos), clase_finca_urbana_id (14=pisos, 15=casas, 99=todos)
-- Scrapes all 9 combinations (3 tipo × 3 clase) for postal codes 28001–28055
-- Public API, no auth required
-- Data from Colegio General del Notariado (official notary body)
+**Backfill scripts** (`scripts/`):
+- `backfill_postal_codes.py` — 3-phase postal code backfill using ZONE_TO_POSTAL (exact, partial, district fallback)
+- `backfill_detail_fields.py` — visits individual listing URLs via Firecrawl to fill condition/exterior/orientation. Handles expired listings (404/redirect). Rate limited at 2s per deal. Uses Firecrawl credits.
+- `cleanup_bad_zones.py` — nulls out zone values containing amenity keywords
+- `seed_users.py` — seeds users from USERS_CONFIG env var
 
 **ML pipeline** (`ml/`):
-- `train.py` — log-transform target (`np.log1p`), 5-fold CV, timestamped artifacts, returns metrics dict
+- `train.py` — log-transform target, **zone cardinality reduction (zones < 10 deals → empty)**, 5-fold CV, timestamped artifacts
 - `model.py` — `predict_price_from_features()`: applies `np.expm1` to reverse log-transform. `@lru_cache` on artifact loaders
-- `features.py` — `deal_to_features(deal)`: categoricals: Distrito, Zona, Estado, Ubicacion
-- GradientBoostingRegressor(n_estimators=300, max_depth=5, lr=0.05, subsample=0.8)
-- Auto-predict on scrape: new deals get predictions with `model_version="auto"`
+- `features.py` — `deal_to_features(deal)`: 4 numeric (size, beds, baths, floor), 6 binary (storage, terrace, balcony, elevator, garage, **exterior**), 4 categorical (district, zone, condition, orientation)
+- `compare_models.py` — trains LR, RF, GB, XGBoost with A/B experiments. Experiments: a=baseline, b=drop zone+orientation, c=impute condition as good, c2=impute as segunda_mano, d=target price/sqm
+- Production model: GradientBoostingRegressor(n_estimators=300, max_depth=5, lr=0.05, subsample=0.8)
+- Model version: `gb_20260331_155727`
 
-**Financial model** (`utils/excel.py`): `run_flip_analysis()` — Fix & Flip with monthly equity cash flows, leverage, IRR via `numpy_financial.irr`.
+**Financial model** (`utils/excel.py`): `run_flip_analysis()` — Fix & Flip with monthly equity cash flows, dual-debt leverage, IRR via `numpy_financial.irr`.
 
 ### Frontend (`frontend/`)
 Next.js 14 App Router + Tailwind CSS + Recharts.
 
-**API architecture**: `NEXT_PUBLIC_API_URL` controls backend target. Production calls Railway directly. Local uses `/api` proxy. HTTPS forced except for localhost.
-
-**Authentication**:
-- `lib/auth.ts` — JWT in localStorage + cookie `capresol_token`
-- `middleware.ts` — redirects unauthenticated (no cookie) to `/login`, excludes `/api` routes
-- `app/login/page.tsx` — full page reload on success (`window.location.href`)
-
 **Pages**:
 - `/` — dashboard with stats, recent deals, scrape button, nav cards
-- `/deals` — full table with column filters, pagination, ML predictions inline. Supports URL params `?district=X&condition=Y` for pre-filtered views (linked from analytics)
-- `/valuaciones` — batch ML predictions + per-row delete
+- `/deals` — full table with column filters (including **Ext/Int** and **Orientation** columns), pagination, ML predictions inline, URL params `?district=X&condition=Y`
+- `/valuaciones` — batch ML predictions (max 25), checkbox multi-select, bulk delete, delete all, newest first sorting
 - `/analyses` — Fix & Flip history + modal + edit/delete
-- `/analytics` — opportunity-focused dashboard (see Analytics section)
+- `/analytics` — 10-section opportunity dashboard with global filters
 - `/login` — auth form
 
-**Analytics dashboard** (`app/analytics/page.tsx`):
-Section order:
-1. **KPI Strip** — Dataset count, listings a reformar, top opportunity district, most affordable district
-2. **Oportunidad real por distrito** — Ask reformar (portal) vs Closing nuevo (notary). Conservative upside with clickable listings → deals page filtered by district+condition
-3. **Upside en portales** — Ask reformar vs Ask buen estado. Optimistic upside with clickable listings
-4. **Upside del mercado** — Closing segunda mano vs Closing nueva (both notarial). Market ceiling
-5. **Margen de negociacion** — Ask vs closing spread per district (how much room to negotiate). Filter: Todos/Segunda mano/Obra nueva
-6. **Valoracion ML** — ML predicted vs asking price spread per district
-7. **Estado de la propiedad** — Condition pie chart (reformar/buen estado/nueva)
-8. **Nuevos listings por mes** — Timeline (listed_date, not created_at)
-9. **Cartera analizada** — Portfolio KPIs (IRR, MOIC, ROE) from financial analyses
-10. **Mostrar mas** — Precio/m2 por distrito, price/size/bedrooms histograms, amenities
-
-Global filters: Max/Min EUR/m2 presets + Pisos/Casas/Todos (applies to all charts)
-
-## Current Status
+## Current Status (as of 2026-03-31)
 
 | Component | Status |
 |---|---|
 | JWT Authentication | ✅ 6 users, login, protected routes |
 | Production deployment | ✅ Railway + Vercel, auto-redeploy on push |
-| DB schema | ✅ deals, users, predictions, financial_analyses, notary_stats |
-| 5-portal scraping | ✅ Working with auto ML prediction on new deals |
-| Notary data (penotariado) | ✅ 55 postal codes × 9 combos, ArcGIS API |
-| Analytics dashboard | ✅ 3 opportunity charts, negotiation margins, ML spread |
-| ML retrain endpoint | ✅ POST /ml/retrain with log-transform, 5-fold CV, cache clear |
-| Auto-predict on scrape | ✅ New deals get ML predictions automatically |
-| Postal code extraction | ✅ Regex + ZONE_TO_POSTAL fallback (131 barrios) |
-| Idealista HTML scraper | ✅ Improved: 3000-char context, bathroom/orientation fallbacks |
+| DB schema | ✅ deals (26 fields incl. exterior), users, predictions, financial_analyses, notary_stats |
+| 5-portal scraping | ✅ Working with shared condition/exterior/orientation detectors |
+| Notary data | ✅ 55 postal codes × 9 combos |
+| Analytics dashboard | ✅ 3 opportunity charts, negotiation margins, ML spread, opportunity scoring |
+| ML model | ✅ GB R²=0.883 CV, 4,425 deals, zone cleanup, 4-model comparison done |
+| ML compare endpoint | ✅ POST /ml/compare with 5 experiment configurations |
+| Postal code backfill | ✅ Coverage 11.9% → 71.4% |
+| Detail page backfill | ✅ Condition 50.6% → 66.1%, Exterior 0% → 10.6% |
 | Fix & Flip model | ✅ LTV/mortgage/capex debt supported |
-| Deals page URL params | ✅ ?district=X&condition=Y pre-filters from analytics links |
-| Dataset | ~2,699 deals on Railway (migrated from local) |
-| Notary data on Railway | ⚠️ Need to run POST /notary/scrape after deploy |
+| Valuaciones bulk actions | ✅ Multi-select delete, delete all, max 25 predictions |
+| Deals page columns | ✅ Ext/Int + Orientation columns added |
+| Dataset | 4,432 deals on Railway |
+| EDA figures | ✅ 9 figures in figures/ directory |
+| Thesis draft | ✅ FinalDraft.docx.md — restructured with EDA, model comparison, all 24 comments applied |
+
+## EDA Key Findings (for thesis reference)
+
+- **District** (eta²=0.52) and **zone** (eta²=0.49) explain ~50% of price variance each
+- **Bathrooms** (r=+0.31) is the strongest numeric predictor; bedrooms has zero correlation with price/sqm
+- **Condition** (eta²=0.006 aggregate) appears irrelevant but is a Simpson's paradox: renew is cheaper in 15/20 districts when controlling for location
+- **Amenity premiums** (elevator +53%, terrace +50%) are confounded with district
+- **Missing condition** (34% of dataset) comes mainly from Redpiso (100% missing) and behaves price-wise like "good" condition
+- **Zone cardinality**: 35% of zones have < 5 deals. Mapping zones < 10 deals to empty reduces features 327→201 and improves all models
+
+## ML Experiment Results (2026-03-31)
+
+| Experiment | Best R² CV | Best MAE | Winner |
+|---|---|---|---|
+| A: Baseline (zone cleanup) | 0.883 | 167,418 | GB |
+| B: Drop zone + orientation | 0.860 | 176,211 | XGB |
+| C: B + impute as good | 0.858 | 180,846 | XGB |
+| C2: B + impute as segunda_mano | 0.860 | 177,632 | XGB |
+| D: B + target price/sqm | 0.856* | 174,415 | GB |
+
+**Production uses Experiment A.** Zone carries too much signal to drop.
+
+## Thesis Status
+
+- **File**: `FinalDraft.docx.md`
+- **Structure**: Abstract → Introduction → Literature Review → Methodology → EDA → ML Model → Financial Model → Analytics → Results → Conclusions
+- **All 24 comments from docx review applied**
+- **Estimated pages**: ~32 text + ~8 figures/screenshots = ~40 pages
+- **Pending**: professional feedback [PLACEHOLDER], screenshots to insert, final formatting for .docx export
+- **Figures**: 9 EDA charts in `figures/` directory, all regenerated with latest 4,432-deal data
 
 ## Roadmap — Next Steps
 
-### Data Population
-- Run POST /notary/scrape on Railway after deploy
-- Run more scrape cycles to grow dataset (available: Idealista HTML ~15k, Fotocasa ~9k, Pisos.com ~10k)
+### Thesis Completion
+- Fill in professional feedback from 5 practitioners (Argentina + Spain)
+- Take screenshots of production app for Appendix
+- Export to .docx and format (TNR 12pt, 1.5 spacing)
+- Final review
 
-### Analytics Improvements
-- Add "Reentrenar modelo" button in frontend (endpoint exists: POST /ml/retrain)
-- Barrio-level breakdown (expandable from district view)
-- Time-series notary data (if penotariado API supports historical periods)
+### Data & Model
+- More scraping cycles to grow dataset
+- Get more Firecrawl credits for detail page backfill (condition gap)
+- Improve condition detection in Pisos.com and Fotocasa scrapers
 
-### New Features (lower priority)
-- Prompt-based scraping (search box on home page, parse text to filter params)
-- Deal detail page `/deals/[id]` with property card, ML prediction, analysis history
-- Rental / Cap Rate financial model
+### Features (lower priority)
+- "Reentrenar modelo" button in frontend
+- Deal detail page `/deals/[id]`
+- Cap Rate / rental financial model
+- Scheduled scraping (cron)
 - Export analytics to PDF/Excel
 
 ## Reference Files
@@ -229,3 +257,6 @@ Global filters: Max/Min EUR/m2 presets + Pisos/Casas/Todos (applies to all chart
 - `idealista-integration-guide.md` — API field mapping and request examples
 - `ModelEconomics.xlsx` — Fix & Flip Excel model (reference spec)
 - `Distritos_Barrios_Madrid.md` — Madrid district/barrio structure reference
+- `APA 6th Edition template.md` — Thesis formatting template
+- `FinalDraft.docx.md` — Current thesis draft
+- `FinalDraft_MayerATT.docx` — Version with 24 review comments (already applied)

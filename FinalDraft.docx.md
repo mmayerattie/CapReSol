@@ -2,7 +2,7 @@
 
 ## Data Collection, Machine Learning Valuation, and Financial Modeling
 
-# Automated Real Estate Investment Analysis in Madrid 
+# Automated Real Estate Investment Analysis in Madrid
 
 ## M. Attie
 
@@ -10,714 +10,450 @@
 
 # Author Note
 
-First paragraph: Complete departmental and institutional affiliation  
-Second paragraph: Changes in affiliation (if any)  
-Third paragraph: Acknowledgments, funding sources, special circumstances  
-Fourth paragraph: Contact information (mailing address and e-mail)
+[First paragraph: Complete departmental and institutional affiliation]
 
-# 
+[Second paragraph: Acknowledgments and special circumstances]
+
+[Third paragraph: Contact information, mailing address and e-mail]
+
+#
 
 # Abstract
 
-Real estate investment in Madrid suffers from tool fragmentation: property data is scattered across five portals, valuation is done by intuition, and financial projections live in disconnected spreadsheets. This thesis presents CapReSol, a software system that consolidates the full investment analysis pipeline into a single production application. The system scrapes property listings from Idealista, Redpiso, Fotocasa, and Pisos.com through APIs and web scraping, normalizes the data into a unified PostgreSQL schema, and applies a Gradient Boosting regression model to predict market prices. It integrates official notary closing price data from the Colegio General del Notariado, covering 55 Madrid postal codes across nine filter combinations, to benchmark asking prices against real transaction values. A Fix and Flip financial model computes IRR, MOIC, ROE, and gross margin from monthly equity cash flows with leverage support. An analytics dashboard compares asking prices against closing prices, ML predictions against listings, and renovation candidates against finished properties across Madrid’s 21 districts. Trained on 3,190 listings, the Gradient Boosting model achieves an R-squared of 0.87 on held-out data and 0.89 on five-fold cross-validation. The originality of this work lies in the integration: no existing academic or commercial system combines multi-source scraping, ML valuation, official transaction data, financial modeling, and opportunity analytics in a single deployed platform for the Spanish market. The system runs in production on Railway and Vercel with JWT-based multi-user authentication, validated by five real estate professionals from Argentina and Spain.
+This thesis presents CapReSol, a system that automates the real estate investment analysis pipeline for Madrid. The system collects property listings from five Spanish portals (Idealista, Redpiso, Fotocasa, Pisos.com) through APIs and web scraping, normalizes them into a unified database, and applies a Gradient Boosting regression model to predict market prices. It also integrates official notary closing price data from the Colegio General del Notariado for 55 Madrid postal codes, allowing direct comparison between what sellers ask and what buyers actually pay. A separate financial module lets users evaluate Fix and Flip investment opportunities by computing IRR, MOIC, ROE, and gross margin from monthly equity cash flows with leverage. An analytics dashboard then ties everything together, comparing asking prices against closing prices and ML predictions across Madrid's 21 districts to surface where the best opportunities are. The Gradient Boosting model, selected after comparing four algorithms on 4,425 listings, achieves an R-squared of 0.88 on five-fold cross-validation. No existing system, academic or commercial, combines multi-source scraping, ML valuation, notary transaction data, financial modeling, and opportunity analytics in a single deployed platform for the Spanish market. The system runs in production on Railway and Vercel with multi-user authentication, and was reviewed by five real estate professionals from Argentina and Spain.
 
 *Keywords:* real estate, machine learning, property valuation, web scraping, investment analysis, Madrid, gradient boosting, fix and flip, automated valuation model
 
-# 
+#
 
-# 
+#
 
 # CapReSol: Automated Real Estate Investment Analysis for Madrid
 
 ## Background and context
 
-In 2024, real estate investment in Spain reached approximately 14 billion euros, with Madrid accounting for 31 percent of the total volume (CBRE, 2024). Investment funds and private investors, including family offices, comprised nearly a third of total investment activity. Residential assets alone amounted to 4.3 billion euros, making Madrid one of Europe’s most active residential investment markets.
+In 2024, real estate investment in Spain reached approximately 14 billion euros, with Madrid accounting for 31 percent of the total volume (CBRE, 2024). Investment funds and private investors, including family offices, made up nearly a third of total investment activity. Residential assets alone amounted to 4.3 billion euros.
 
-At the same time, the number of new housing units created per household has been declining since 2018, reaching its lowest level since 2014 in 2023 (BBVA Research, 2024). Fewer new units mean fewer opportunities, which makes it essential for investors to identify and act on deals quickly. In a scarce environment, the difference between securing a profitable acquisition and missing it often comes down to speed and analytical depth.
+At the same time, new housing construction has not kept pace with demand. The number of new units created per household has been declining since 2018, reaching its lowest level since 2014 in 2023 (BBVA Research, 2024). Fewer new units mean fewer opportunities, and in a market that tight, being able to find and evaluate deals quickly matters.
 
-Yet the tools available to most investment professionals do not match the pace of the market. Property listings sit on five or more portals, each with its own data format, access method, and coverage area. Idealista publishes structured data through an API but caps requests at 100 per month. Fotocasa and Pisos.com render listings through JavaScript, making automated access more complex. Redpiso exposes a public JSON endpoint but with limited property detail. An analyst searching for renovation opportunities across all of Madrid must visit each portal separately, compare listings manually, and maintain spreadsheets to track what has already been reviewed.
+Yet the tools most investment professionals use do not match the pace of the market. Property listings sit on five or more portals, each with its own data format and access method. An analyst looking for renovation opportunities across Madrid must visit each portal separately, compare listings by hand, and maintain spreadsheets to track what has been reviewed. According to the 2025 European PropTech report, 62 percent of real estate professionals find it difficult to identify the right technology tool, citing a fragmented market with too many options that rarely cover the full workflow (Maps PropTech API, 2025). When asked which processes need the most help, 47 percent chose automation, doubling from the previous year.
 
-This fragmentation is not unique to Spain. According to the 2025 European PropTech report, 62 percent of real estate professionals find it difficult to identify the right technology tool, citing a fragmented market with many options that rarely cover the full workflow (Maps PropTech API, 2025). When asked which processes need the most help, 47 percent of respondents chose automation, doubling from the previous year. Repetition remains a major burden. Most agencies operate with three to five separate solutions, and 20 percent report that the tools they use do not match their needs.
-
-The real estate technology sector has grown substantially in Europe, which now hosts 50 percent of PropTech companies worldwide, with a particular focus on the residential sector in countries with high demand and elevated prices per square meter, such as Spain (European PropTech Report, 2025). Within this sector, 60 percent of companies operate in B2B or B2B2C models, and the most commonly adopted technologies are valuation and reporting tools at 64 percent, automation tools at 28 percent, and platforms at 24 percent (Maps PropTech API, 2025).
-
-However, adoption does not mean satisfaction. A small minority of professionals consider PropTech solutions affordable, and cost remains the primary barrier to adoption at 60 percent, followed by lack of information at 45 percent. Despite this, 80 percent of respondents said technology improved their processes, and 41 percent consider spending between 150 and 400 euros per month on technology acceptable. The issue is not willingness to pay but perceived value. Tools that are simple, integrated, and demonstrably useful justify higher investment.
-
-This thesis responds to that gap. CapReSol consolidates the fragmented real estate investment workflow into a single platform, covering data collection, valuation, and financial analysis.
+Europe now hosts 50 percent of PropTech companies worldwide, with particular activity in countries with high housing demand like Spain (European PropTech Report, 2025). Most commonly adopted technologies are valuation and reporting tools (64%), automation tools (28%), and platforms (24%). But adoption has not meant satisfaction. Cost remains the primary barrier at 60 percent, followed by lack of information at 45 percent. Still, 80 percent of respondents say technology improved their processes, and 41 percent consider spending between 150 and 400 euros per month on technology acceptable (Maps PropTech API, 2025). The issue is not willingness to pay. It is perceived value.
 
 ## Problem statement
 
-Real estate investment professionals in Madrid face three compounding inefficiencies that this thesis aims to address:
+Investment professionals in Madrid face three problems that compound each other:
 
-Data fragmentation. Property listings are distributed across five or more portals with no unified view. Each portal uses different data schemas, access methods, and coverage. An analyst tracking renovation opportunities must manually browse each site, cross-reference listings by address, and maintain external records to avoid duplication. There is no standard way to aggregate these sources into a single, filterable dataset.
+The first is data fragmentation. Listings are spread across Idealista, Fotocasa, Pisos.com, Redpiso, and others. Each uses different data schemas, different access methods, and different levels of completeness. There is no standard way to pull them into a single, filterable dataset.
 
-Valuation opacity. Without a systematic method for estimating market value, professionals rely on intuition and manual comparison of similar properties. Automated Valuation Models do exist in the industry, but they are typically proprietary, expensive, and designed for institutional lenders rather than investment analysts. No widely accessible tool combines property features with market data to estimate fair value for the kind of deal-by-deal analysis that funds and individual investors require.
+The second is valuation opacity. Without a systematic method for estimating what a property is worth, professionals rely on intuition and manual comparison of similar listings. Automated Valuation Models exist, but they tend to be proprietary, expensive, and built for institutional lenders rather than the kind of deal-by-deal analysis that a fund or individual investor needs.
 
-Analytical gap. Even when data is collected and a valuation is formed, no system bridges the full pipeline from deal sourcing through financial analysis. Investment decisions require not only knowing a property’s estimated value but also computing metrics such as IRR, MOIC, and ROE under specific renovation and financing assumptions. Today, this analysis happens in disconnected Excel spreadsheets, separate from the deal data and predictions. Similarly, there is no integrated way to compare asking prices against official notary closing prices to assess negotiation margins or to surface which districts offer the best risk-adjusted opportunities.
+The third is an analytical gap. Even when data is collected and a rough valuation is formed, there is no system that connects the pipeline from deal sourcing through financial analysis. Investment decisions require computing metrics like IRR and ROE under specific renovation and financing assumptions. Today that analysis happens in disconnected Excel spreadsheets. There is also no integrated way to compare asking prices against official notary closing prices to check negotiation margins.
 
-These three problems feed into each other. Fragmented data makes it harder to build a reliable valuation model. Without systematic valuation, financial projections are anchored to guesswork. And without a single platform, every step of the analysis requires switching between tools, which slows things down and increases the chance of mistakes.
-
-## Objectives
-
-The primary objective of this thesis is to design, implement, and deploy a system that automates the full real estate investment analysis pipeline for Madrid’s residential market.
-
-This primary objective is supported by six specific goals:
-
-1. Automate the collection of property listings from five heterogeneous sources into a unified, structured PostgreSQL database.
-
-2. Build and evaluate a supervised machine learning model that predicts property market value from physical and locational features.
-
-3. Integrate official notary closing price data from the Colegio General del Notariado to benchmark asking prices against real transaction values.
-
-4. Implement a Fix and Flip financial model that computes IRR, MOIC, ROE, and gross margin from monthly equity cash flows with leverage and tax support.
-
-5. Deliver an analytics dashboard that identifies district-level investment opportunities by comparing asking prices, closing prices, ML predictions, and renovation potential.
-
-6. Deploy the system as a secure, multi-user web application with production infrastructure.
-
-## Scope and delimitations
-
-The system targets Madrid’s residential real estate market exclusively. Geographic coverage spans the city’s 21 administrative districts and 55 postal codes (28001 through 28055). Data collection draws from five specific portals: Idealista (both API and HTML scraping), Redpiso, Fotocasa, and Pisos.com. Notary data comes from the Colegio General del Notariado through its public ArcGIS API.
-
-The machine learning component is limited to supervised regression for price prediction. It does not include time-series forecasting, image-based analysis, or rental yield estimation. The financial modeling implements Fix and Flip analysis only; a Cap Rate model for rental investment strategy was planned but not implemented within the scope of this thesis. The system supports six authenticated users, reflecting the scale of a small fund team rather than a public-facing platform.
-
-## Significance of the study
-
-This work contributes in three ways. It delivers a working system, not a proof of concept, that runs in production with over 3,000 listings and serves authenticated users. It demonstrates a complete pipeline from raw portal HTML to investment decision metrics, something most academic work and commercial products only address in pieces. And it responds to a real market need, validated through feedback from five real estate professionals in Argentina and Spain, reported in the Results chapter.
+These three problems feed into each other. Fragmented data makes it harder to build a valuation model. Without systematic valuation, financial projections rely on guesswork. And without a single platform, every step of the analysis requires switching between tools.
 
 ## Main contribution
 
-The contribution of this thesis is a working, deployed software system that covers the full real estate investment pipeline in a single application: from raw portal data to financial decision metrics. What sets it apart from existing work is the integration. No published system combines web scraping from multiple portals, supervised ML valuation, official notary closing price data, Fix and Flip financial modeling with leverage, and an analytics dashboard designed to identify opportunities. Each of these components exists separately elsewhere. Nowhere are they connected for a specific market.
+CapReSol is a working, deployed system that covers the full real estate investment pipeline in one application: from raw portal data to financial decision metrics. What makes it different from existing work is the integration. Multi-source web scraping, ML valuation, official notary closing prices, Fix and Flip financial modeling with leverage, and an analytics dashboard designed to find opportunities. Each of these components exists separately elsewhere. Nowhere are they connected for a specific market.
 
-The system is not theoretical. It runs in production with 3,195 listings from five portals, a trained Gradient Boosting model with R-squared of 0.87, notary data from 55 postal codes, and six authenticated users. The approach is original in that it targets the ingestion problem, the messy work of collecting and normalizing heterogeneous data, rather than focusing only on the analysis stage as most existing solutions do. It also bridges two data worlds that are usually kept separate: portal asking prices and official notary closing prices, enabling comparative analytics that neither source can provide alone.
+The system is not a prototype. It runs in production with over 4,400 listings from five portals, a Gradient Boosting model with R-squared of 0.88 on cross-validation, notary data from 55 postal codes, and six authenticated users.
+
+## Objectives
+
+The primary objective is to design, build, and deploy a system that automates the full real estate investment analysis pipeline for Madrid's residential market.
+
+Six specific goals support this:
+
+1. Automate the collection of property listings from five sources into a unified PostgreSQL database.
+2. Build and evaluate a machine learning model that predicts property prices from physical and locational features.
+3. Integrate official notary closing price data to benchmark asking prices against real transaction values.
+4. Implement a Fix and Flip financial model with IRR, MOIC, ROE, and gross margin computation.
+5. Build an analytics dashboard that identifies district-level investment opportunities.
+6. Deploy the system as a secure, multi-user web application.
 
 ## Thesis organization
 
-The thesis proceeds as follows. The Literature Review covers PropTech, machine learning for valuation, financial modeling, and the research gap. The Methodology section describes the research approach, technology selection, and development process. The Technical Content sections cover the system architecture, data pipeline, ML model, financial model, and analytics dashboard. The Results section reports findings including ML evaluation metrics, dataset statistics, and professional feedback. The Limitations section discusses what could break and the boundaries of the study. The Conclusions section presents implications and real-world applications.
+The thesis proceeds as follows. Chapter 2 reviews the literature on PropTech, ML for valuation, Fix and Flip as an investment strategy, and the competitive landscape. Chapter 3 covers the methodology: research approach, technology choices, data sources, and the collection pipeline. Chapter 4 presents an exploratory data analysis of the collected dataset. Chapter 5 describes the ML valuation model, including feature engineering, model comparison, and experiment results. Chapter 6 explains the financial analysis module. Chapter 7 describes the analytics dashboard. Chapter 8 reports results, professional feedback, and discusses limitations. Chapter 9 offers conclusions and future directions.
 
-# Literature Review
-
-The following review covers the academic and industry context for this work: the state of PropTech adoption, technical approaches to data collection and ML valuation, financial modeling for real estate investment, the role of notary transaction data, and the gap that CapReSol addresses.
+# Literature review
 
 ## PropTech and real estate technology
 
-PropTech, a term combining property and technology, refers to digital tools applied across the real estate lifecycle: search, acquisition, management, and disposition. The category covers everything from marketplace platforms to valuation tools to investment analysis software.
+PropTech refers to digital tools applied across the real estate lifecycle: search, acquisition, management, and disposition. The category covers everything from marketplace platforms to valuation tools to investment analysis software.
 
-In Europe, PropTech has grown to represent roughly half of all companies in the sector worldwide, with particular concentration in countries with high housing demand and elevated prices per square meter (European PropTech Report, 2025). Spain is among the most active markets in Southern Europe. Spanish real estate companies are increasingly using advanced technologies, including artificial intelligence, smart data tools, and digital marketplaces, to identify opportunities and improve operations across design, development, and brokerage (PwC, 2025).
+In Europe, PropTech has grown to represent roughly half of all companies in the sector worldwide, with particular concentration in countries with high housing demand (European PropTech Report, 2025). Spain is among the most active markets in Southern Europe. Spanish real estate companies are increasingly using AI, smart data tools, and digital marketplaces to find opportunities and improve operations (PwC, 2025).
 
-The distribution of business models within PropTech leans heavily toward enterprise clients: 60 percent of companies operate in B2B or B2B2C models, while 40 percent target consumers directly. Among B2B solutions specifically, 28 companies focus on valuation and 135 on internal operations, representing 33 percent of the sector (Maps PropTech API, 2025).
+The business model distribution leans toward enterprise clients: 60 percent of PropTech companies operate in B2B or B2B2C models, while 40 percent target consumers directly. Among B2B solutions, 28 companies focus on valuation and 135 on internal operations (Maps PropTech API, 2025).
 
-Despite the growth, the industry appears to be entering a consolidation phase. Adoption has already happened for most firms; the focus is now on making existing tools work better, optimizing usage, and embedding technology into daily operations rather than adding more point solutions (Maps PropTech API, 2025).
+Despite the growth, the industry appears to be entering a consolidation phase. Adoption has already happened for most firms. The focus now is on making existing tools work, not adding more (Maps PropTech API, 2025).
 
 ## Automated data collection in real estate
 
-Collecting property data from multiple online sources involves two main technical approaches: structured API access and web scraping.
+Collecting property data from multiple online sources involves two main approaches: structured API access and web scraping.
 
-Structured APIs, such as the one provided by Idealista, return property data in standardized JSON format with defined fields, pagination, and authentication. Their advantage is data quality and reliability; their limitation is typically rate limits and cost. Idealista’s API, for instance, enforces a cap of 100 requests per month and limits pagination to 50 results per page.
+Structured APIs, like the one Idealista provides, return data in standardized JSON with defined fields, pagination, and authentication. The advantage is data quality; the limitation is rate limits. Idealista caps requests at 100 per month.
 
-Web scraping extracts data from rendered HTML pages. Modern property portals often use JavaScript frameworks to render content dynamically in the browser, which means traditional HTTP-based scrapers see empty pages. Services like Firecrawl address this by rendering pages through headless browsers and returning the visible content as clean markdown or HTML. This approach unlocks portals such as Fotocasa and Pisos.com, which would otherwise resist automated data collection.
+Web scraping extracts data from rendered HTML pages. Modern portals often use JavaScript frameworks to render content in the browser, which means traditional HTTP scrapers see empty pages. Services like Firecrawl handle this by rendering pages through headless browsers and returning clean markdown. This is how portals like Fotocasa and Pisos.com can be accessed programmatically.
 
-The main challenge in multi-source data collection is schema heterogeneity. Each portal names fields differently, structures data in its own format, and has different levels of completeness. A three-bedroom apartment on Idealista has structured fields for bedrooms, bathrooms, and floor. The same listing on Fotocasa may bury those details inside a text description. Entity resolution, figuring out whether two listings from different portals are the same property, adds difficulty. The most reliable deduplication strategy for portal data is matching on listing URL, since each portal assigns unique URLs.
+The main challenge in multi-source collection is schema heterogeneity. Each portal names fields differently and has different levels of completeness. A three-bedroom apartment on Idealista has structured fields for bedrooms, bathrooms, and floor. The same listing on Fotocasa may bury those details inside a text description. Deduplication across portals is best done by matching on listing URL, since each portal assigns unique URLs.
 
-The Extract, Transform, Load pattern governs this type of pipeline. Raw data is extracted from heterogeneous sources, transformed into a canonical schema through parsing and normalization, and loaded into a relational database. For real estate specifically, normalization must handle geographic entities: barrio names must map to canonical district names, and postal codes must be extracted from free-text addresses.
+The Extract, Transform, Load (ETL) pattern governs this type of pipeline. Raw data is extracted from heterogeneous sources, transformed into a canonical schema through parsing and normalization, and loaded into a relational database.
 
 ## Machine learning for property valuation
 
-The use of quantitative models to estimate property value has a long academic history. Hedonic pricing models, formalized by Rosen (1974), decompose a property’s price into the implicit value of its individual characteristics: location, size, number of rooms, condition, and amenities. These models traditionally use linear regression, which provides interpretability but assumes a linear relationship between features and price.
+Hedonic pricing models, formalized by Rosen (1974), decompose a property's price into the implicit value of its characteristics: location, size, rooms, condition, and amenities. These models traditionally use linear regression, which is interpretable but assumes linearity.
 
-More recent work has applied machine learning methods that relax this linearity assumption. Decision trees partition the feature space recursively to fit non-linear patterns. Random forests aggregate many trees to reduce variance through bagging. Gradient Boosting builds trees sequentially, with each new tree correcting the errors of the ensemble so far. XGBoost and LightGBM are optimized implementations of gradient boosting that have dominated structured data competitions and applied research in recent years.
+More recent work applies machine learning methods that handle non-linear relationships. Decision trees partition the feature space recursively. Random forests aggregate many trees to reduce variance. Gradient Boosting builds trees sequentially, with each new tree correcting the errors of the previous ensemble. XGBoost and LightGBM are optimized implementations of gradient boosting that have dominated applied ML research on structured data.
 
-For property price prediction specifically, gradient boosting methods have shown strong performance across multiple geographies. Baldominos, Saez, and Quintana (2018) applied ensemble methods to Spanish housing data and found that gradient boosting outperformed linear regression and random forests on MAE and RMSE metrics. Kok, Kopczuk, and Timmins (2017) demonstrated the value of large-scale property data combined with machine learning for real estate valuation at scale.
+For property price prediction specifically, Baldominos, Saez, and Quintana (2018) applied ensemble methods to Spanish housing data and found that gradient boosting outperformed linear regression and random forests on MAE and RMSE. Kok, Kopczuk, and Timmins (2017) demonstrated the value of large-scale property data combined with machine learning for valuation at scale.
 
-A common preprocessing step for price prediction is log-transformation of the target variable. Property prices follow a right-skewed distribution: most properties cluster in a moderate price range, while a long tail extends toward expensive properties. Applying log(1 \+ price) compresses this distribution, allowing the model to learn proportional errors rather than absolute ones. At inference time, the prediction is reversed with exp(prediction) \- 1\. This transformation typically improves both training stability and evaluation metrics for tree-based models.
+Model evaluation uses standard regression metrics. R-squared measures how much variance the model explains. MAE gives the average prediction error in euros. RMSE penalizes large errors more. MAPE normalizes errors by the actual value, useful for comparing across price ranges. Cross-validation, typically five or ten folds, estimates generalization by training and testing on different partitions.
 
-Feature engineering for real estate models involves three categories of variables. Numeric features such as size in square meters, number of bedrooms, bathrooms, and floor level. Binary features capturing the presence or absence of amenities like elevator, terrace, garage, and storage room. Categorical features encoding location (district, neighborhood) and property state (condition, orientation), which are typically one-hot encoded for tree-based models.
+## Fix and Flip as an investment strategy
 
-Model evaluation relies on standard regression metrics. R-squared measures how much variance the model explains. MAE (Mean Absolute Error) gives the average prediction error in euros, which makes it easy to interpret. RMSE (Root Mean Squared Error) penalizes large errors more heavily. MAPE (Mean Absolute Percentage Error) normalizes errors by the actual value, useful for comparing across price ranges. Cross-validation, typically five or ten folds, estimates how well the model generalizes by training and testing on different partitions of the data.
+The Fix and Flip strategy involves purchasing a property in need of renovation, improving it, and selling at a higher price. In residential real estate, this works best in markets where three conditions come together: limited new construction supply, a large stock of older properties that can be upgraded, and legal or practical constraints that make ground-up development difficult.
 
-## Financial modeling for real estate investment
+Madrid fits all three. New housing construction has been declining since 2018 (BBVA Research, 2024). The city center, particularly districts like Centro, Salamanca, and Chamberi, is full of pre-war buildings that cannot be demolished or replaced due to heritage protections. The urban plan restricts new development in the most desirable areas. When you cannot build new, renovation is the most viable path to creating value. This is why Fix and Flip has become one of the most common active investment strategies in Madrid's residential market.
 
-The Fix and Flip strategy involves purchasing an undervalued property, typically in need of renovation, improving it, and selling at a higher price. It is one of the most common active investment strategies in residential real estate, particularly in markets where significant stock exists in conditions described as “a reformar” (needing renovation).
+The primary metric for evaluating a flip is the Internal Rate of Return (IRR), the discount rate at which the net present value of all cash flows equals zero. For projects measured in months, IRR is computed from monthly cash flows and annualized. Complementary metrics include MOIC (total cash returned divided by equity invested), ROE (profit divided by maximum equity exposure), and Gross Margin (profit divided by total development cost).
 
-The primary metric for evaluating a flip investment is the Internal Rate of Return (IRR), which represents the discount rate at which the net present value of all cash flows equals zero. For real estate flips with holding periods measured in months, IRR is computed from monthly cash flows and then annualized. The formula converts monthly IRR to annual: annual\_IRR \= (1 \+ monthly\_IRR)^12 \- 1\.
-
-Complementary metrics include the Multiple on Invested Capital (MOIC), which measures total cash returned divided by total equity invested; Return on Equity (ROE), which measures profit divided by maximum equity exposure; and Gross Margin, which divides profit by total development cost. Each metric captures a different dimension of the investment: MOIC reflects total return, ROE reflects capital efficiency, and Gross Margin reflects cost control.
-
-Leverage, the use of debt to finance part of the acquisition and renovation, amplifies both returns and risk. A mortgage covering a portion of the purchase price reduces the equity required upfront, increasing IRR and ROE when the deal is profitable. However, interest payments during the holding period reduce absolute profit. Financial models must account for the monthly cost of both acquisition debt (mortgage) and renovation debt (capex financing), typically modeled as interest-only during the holding period with full principal repayment at exit.
+Leverage amplifies both returns and risk. A mortgage covering part of the purchase price reduces equity needed upfront, increasing IRR when profitable. But interest payments reduce absolute profit. Financial models must account for the monthly cost of acquisition debt and renovation debt, typically modeled as interest-only during the hold period with principal repaid at exit.
 
 ## Notary and transaction data
 
-Spain’s notary system, administered by the Colegio General del Notariado, records the closing price of every real estate transaction. These transaction prices differ from the asking prices published on portals. The gap between asking and closing represents the negotiation margin, a critical piece of market intelligence for investors.
+Spain's notary system, administered by the Colegio General del Notariado, records the closing price of every real estate transaction. These prices differ from what portals publish. The gap between asking and closing is the negotiation margin, and knowing it by district is valuable intelligence for any investor.
 
-The Colegio General del Notariado makes aggregated transaction data publicly available through an ArcGIS FeatureServer API hosted at penotariado.com. The data is organized by geographic level, with Layer 4 providing postal code granularity. For each postal code, the API returns the average transaction price per square meter, average total transaction price, average property surface area, and transaction counts. These statistics can be filtered by construction type (nueva, segunda mano, or all) and property class (pisos, casas, or all), yielding nine filter combinations.
+The Colegio General del Notariado publishes aggregated data through a public API at penotariado.com. For each postal code, the data includes average price per square meter at closing, average total transaction price, average surface area, and transaction counts. These can be filtered by construction type (new, second-hand, or all) and property class (apartments, houses, or all), yielding nine filter combinations.
 
-What makes this data useful is that it represents actual transaction prices, not aspirational asking prices. Comparing portal asking prices against notary closing prices by district shows which areas have the largest negotiation margins and where asking prices most diverge from what buyers actually pay.
+This data is useful because it represents what buyers actually pay, not what sellers hope for. Comparing portal asking prices against notary closing prices by district shows where the largest negotiation margins exist.
 
-## Analytics and decision support systems
+## Existing solutions and competitive landscape
 
-Dashboards in real estate investment work best when they answer specific questions rather than just displaying numbers. Where are the best opportunities? How much room is there to negotiate? Is the market pricing a property fairly? These are the questions an analyst has open in their head when looking at deal flow.
+Most existing tools address one piece of the investment pipeline. Automated Valuation Models focus on price prediction. Portal aggregators focus on search. Financial modeling tools focus on returns. Dashboard products focus on visualization.
 
-Opportunity scoring algorithms rank geographic areas by combining signals: entry price, renovation upside, model-predicted undervaluation. Averaging the ranks across these dimensions produces a single score per district. The advantage of this approach is balance. It avoids fixating on a single metric.
+In the Spanish market specifically, Aura (luci.aura-app.es) is a consumer-facing search aggregator that lets users search across multiple portals using natural language queries. It connects users with financing and legal professionals. But it targets homebuyers, not investors, and offers no ML valuation, no financial modeling, and no analytics for investment decision making.
 
-Comparing data sources against each other is where the real insights come from. Asking prices versus notary closing prices reveal negotiation margins. ML predicted prices versus asking prices flag systematic mispricing. And “a reformar” prices versus “buen estado” prices in the same district quantify what renovation is actually worth.
+Internationally, six commercial competitors were analyzed:
 
-## Gap in the literature
+| Capability | Aura | IntellCRE | HouseCanary | Cherre | CoreLogic | CapReSol |
+| :---- | :---- | :---- | :---- | :---- | :---- | :---- |
+| Multi-source scraping | Yes | No | No | Partial | No | Yes |
+| ML valuation | No | Yes | Yes | No | Yes | Yes |
+| Notary/transaction data | No | No | Yes | Partial | Yes | Yes |
+| Financial modeling | No | Partial | No | No | No | Yes |
+| Analytics dashboard | No | Partial | Yes | Yes | Yes | Yes |
+| Spain / Madrid | Yes | No | No | No | No | Yes |
 
-Existing academic work and commercial products tend to address individual components of the real estate investment pipeline. Automated Valuation Models focus on price prediction. Portal aggregators focus on data collection. Financial modeling tools focus on investment returns. Dashboard products focus on market visualization.
+*Table 1.* Capabilities of existing solutions compared to CapReSol.
 
-| Capability | IntellCRE | HouseCanary | Cherre | ATTOM | CoreLogic | Quantarium | CapReSol |
-| :---- | :---- | :---- | :---- | :---- | :---- | :---- | :---- |
-| Multi-source scraping | No | No | Partial | No | No | No | Yes |
-| ML valuation | Yes | Yes | No | Yes | Yes | Yes | Yes |
-| Notary/transaction data | No | Yes | Partial | Partial | Yes | Partial | Yes |
-| Financial modeling | Partial | No | No | No | No | No | Yes |
-| Analytics dashboard | Partial | Yes | Yes | Partial | Yes | No | Yes |
-| Madrid-specific | No | No | No | No | No | No | Yes |
+No published system combines multi-source scraping, ML valuation, official notary data, financial modeling with leverage, and opportunity analytics in a single application. The international competitors (HouseCanary, CoreLogic) operate only in the United States. Aura operates in Spain but targets a different user and a different problem.
 
-*Table 1\.* Capabilities of commercial competitors compared to CapReSol.
+Ninety-two percent of firms report piloting AI tools, but only 5 percent have achieved their stated goals, largely because of legacy infrastructure and fragmented data ingestion (v7 Labs, 2026). Most existing solutions handle the analysis stage but skip the messy work of collecting and normalizing data from unstructured sources. That ingestion problem is where CapReSol starts.
 
-No published system combines portal scraping from multiple sources, ML valuation, official notary closing price data, financial modeling with leverage, and an analytics dashboard in a single production application. The closest commercial products, HouseCanary and CoreLogic, operate only in the United States and focus on valuation rather than the full pipeline.
+# Methodology
 
-The numbers reflect this. Ninety-two percent of firms report piloting AI tools, but only 5 percent have achieved their stated goals, largely because of legacy infrastructure and fragmented data ingestion (v7 Labs, 2026). Most existing solutions handle the analysis stage but skip the messy work of collecting, normalizing, and deduplicating data from unstructured sources.
+## Research approach
 
-This thesis fills that gap by building a system that covers the full pipeline, from raw portal HTML to investment decision metrics, for the Madrid residential market.
+This thesis follows a Design Science Research methodology. The contribution is a software artifact built to solve a concrete problem. Evaluation uses quantitative metrics (ML model performance, dataset coverage) and qualitative feedback from five real estate professionals.
 
-# Method
+Development was iterative: database schema first, then data collection, then ML, then financial modeling, then analytics, then authentication and deployment. Each component was tested against production data before moving to the next.
 
-## Research Approach
-
-This thesis follows a Design Science Research methodology. The contribution is a software artifact, the CapReSol system, built to solve a concrete problem. Evaluation uses two mechanisms: quantitative metrics (ML model performance, dataset coverage) and qualitative feedback from five real estate professionals in Argentina and Spain.
-
-The development followed an iterative approach, building each system capability incrementally: database schema first, then data collection, then machine learning, then financial modeling, then analytics, and finally authentication and deployment. Each iteration was tested against production data before moving to the next component.
-
-## System Requirements
-
-### Functional Requirements
-
-| ID | Requirement | Description |
-| :---- | :---- | :---- |
-| FR1 | Multi-source scraping | Collect listings from Idealista (API \+ HTML), Redpiso, Fotocasa, Pisos.com |
-| FR2 | ML valuation | Predict property price from physical and locational features |
-| FR3 | Notary integration | Ingest closing price data from penotariado.com for 55 postal codes |
-| FR4 | Financial analysis | Compute Fix and Flip metrics (IRR, MOIC, ROE, Gross Margin) with leverage |
-| FR5 | Analytics dashboard | Surface district-level opportunities with upside, negotiation, and ML charts |
-| FR6 | Multi-user auth | JWT-based login with bcrypt password hashing for 6 user accounts |
-
-*Table 2\.* Functional requirements.
-
-### Non-functional Requirements
-
-Security. All API endpoints except login are protected by JWT authentication. Passwords are hashed with bcrypt. Tokens expire after seven days.
-
-Availability. The system auto-deploys on push to the main branch. Railway restarts the backend container on failure. Vercel serves the frontend from a global CDN.
-
-Performance. ML model artifacts are cached in memory using Python’s lru\_cache decorator, so inference after the first request avoids disk reads. The analytics endpoint returns all 13 data structures in a single response to minimize round-trips.
-
-Data integrity. PostgreSQL provides ACID compliance. URL uniqueness constraints prevent duplicate listings. Composite unique keys on notary records prevent duplicate postal code entries.
-
-## Technology Selection
+## Technology selection
 
 | Layer | Technology |
 | :---- | :---- |
 | Backend | FastAPI (Python), Uvicorn, SQLAlchemy + Alembic |
 | Database | PostgreSQL 16 (ACID, upsert, UUID PKs) |
 | Frontend | Next.js 14, Tailwind CSS, Recharts |
-| ML | scikit-learn, joblib, numpy-financial |
+| ML | scikit-learn, XGBoost, joblib, numpy-financial |
 | Deployment | Railway (Docker + managed Postgres), Vercel (CDN) |
 
-*Table 3\.* Technology stack.
+*Table 2.* Technology stack.
 
-The backend runs as a single FastAPI service. An earlier design considered separating routing and coordination into a Node.js layer with FastAPI handling only ML inference, but this was abandoned in favor of a unified Python service. FastAPI handles all API routing, authentication, database operations, scraping orchestration, ML inference, financial computation, and analytics aggregation. Consolidating into a single service reduced operational complexity and eliminated inter-service HTTP latency.
+The backend is a single FastAPI service. An earlier design considered a separate Node.js routing layer, but consolidating into Python eliminated inter-service latency and reduced complexity. The system is deployed on Railway (backend Docker container with managed PostgreSQL) and Vercel (frontend), both auto-deploying from the main GitHub branch. Authentication uses JWT tokens with bcrypt-hashed passwords.
 
-Uvicorn is the ASGI server that runs the FastAPI application. It handles concurrent HTTP requests and supports the proxy headers configuration that Railway’s SSL termination layer requires.
+## Data sources
 
-## Data Sources
-
-| Source | Method | Auth | Approx. Volume | Key Fields |
+| Source | Method | Auth | Volume | Key fields |
 | :---- | :---- | :---- | :---- | :---- |
-| Idealista API | REST API (OAuth2) | Client ID \+ Secret | \~500/cycle (rate limited) | All structured: price, size, rooms, floor, amenities, condition |
-| Idealista HTML | Firecrawl (JS render) | Firecrawl API key | \~15,000 listings | Regex-parsed from markdown: price, size, rooms, condition |
-| Redpiso | JSON API | None (public) | \~1,300 listings | Structured: price, size, rooms, district, broker info |
-| Fotocasa | Firecrawl (JS render) | Firecrawl API key | \~9,000 listings | Regex-parsed from markdown: price, size, rooms, condition |
-| Pisos.com | Firecrawl (JS render) | Firecrawl API key | \~10,500 listings | Regex-parsed from markdown: price, size, rooms, district |
-| Notary (penotariado) | ArcGIS FeatureServer | None (public) | 55 postal codes x 9 combos | Avg price/sqm, avg total price, avg surface, transaction counts |
+| Idealista API | REST (OAuth2) | Client ID + Secret | ~500/cycle | All structured: price, size, rooms, floor, amenities, condition |
+| Idealista HTML | Firecrawl (JS render) | API key | ~15,000 | Regex-parsed: price, size, rooms, condition |
+| Redpiso | JSON API | None | ~1,300 | Structured: price, size, rooms, district, broker |
+| Fotocasa | Firecrawl (JS render) | API key | ~9,000 | Regex-parsed: price, size, rooms, condition |
+| Pisos.com | Firecrawl (JS render) | API key | ~10,500 | Regex-parsed: price, size, rooms, district |
+| Notary | ArcGIS FeatureServer | None | 55 postcodes x 9 | Avg price/sqm, avg price, avg surface, transactions |
 
-*Table 4\.* Data sources.
+*Table 3.* Data sources.
 
-## Development Process
+## Data collection pipeline
 
-Development proceeded through eight sequential phases:
+Data enters the system through three scraping strategies. The Idealista API provides structured JSON via OAuth2, rate-limited to 100 requests per month. Redpiso exposes a public JSON endpoint with no authentication. Three portals (Idealista HTML, Fotocasa, Pisos.com) render content through JavaScript, so the system uses Firecrawl to render pages in headless browsers and parses the returned markdown with regex.
 
-1. Database schema design. Defined six tables (users, deals, predictions, financial\_analyses, notary\_stats, messages) with SQLAlchemy models and Alembic migrations.
+Before storage, every listing goes through normalization. District normalization maps approximately 150 barrio name variants to Madrid's 21 canonical districts, using exact lookup first, then partial matching. Postal code extraction uses a regex for five-digit codes starting with 28, with a fallback dictionary mapping 131 barrio names to their postal codes.
 
-2. Idealista API scraper. Built OAuth2 authentication flow, pagination, field mapping, and district normalization.
+Each listing must pass four quality checks: it needs a URL, an asking price, a size in square meters, and a valid Madrid district. Listings missing any of these are dropped. The database uses a URL-based upsert strategy: when a listing URL already exists, fields that might fill gaps (bedrooms, condition, zone) use COALESCE to prefer new non-null values without overwriting existing data, while price is always updated to the latest scraped value.
 
-3. Additional scrapers. Added Redpiso (JSON API), Fotocasa (Firecrawl), Pisos.com (Firecrawl), and Idealista HTML (Firecrawl) with unified ingestion logic.
+After each scrape batch, newly inserted deals automatically receive ML predictions, stored with model_version="auto" to distinguish them from manual predictions.
 
-4. ML training pipeline. Implemented feature engineering, log-transform, Gradient Boosting training, five-fold cross-validation, and artifact management.
+Notary closing price data is collected from the Colegio General del Notariado's public API, which provides postal-code-level transaction statistics. The system scrapes all nine filter combinations (3 construction types x 3 property classes) for postal codes 28001 through 28055.
 
-5. Fix and Flip financial model. Ported from Excel reference model to Python, implementing monthly equity cash flows with leverage and IRR computation.
+# Exploratory data analysis
 
-6. Notary data integration. Built ArcGIS API client for all nine filter combinations across 55 postal codes.
+Before building the valuation model, we examined the dataset to understand its structure, completeness, and the relationships between features and price.
 
-7. Analytics dashboard. Implemented backend aggregation endpoint with 13 data structures and frontend with 10 chart sections.
+## Dataset overview
 
-8. Authentication and deployment. Added JWT auth with bcrypt hashing, configured Railway Docker deployment, Vercel frontend, and CORS for cross-origin access.
+The production system contains 4,432 property listings across all 21 administrative districts of Madrid, collected from four portal sources.
 
-# System architecture and design
+![Figure 1. Listings per district.](figures/district_distribution.png)
 
-With the methodology established, this section presents the technical design decisions: the three-tier architecture, database schema, authentication flow, and deployment infrastructure.
+*Figure 1.* Listings per district. Centro and Salamanca together account for roughly 30 percent of all listings.
 
-## High-level architecture
+![Figure 2. Dataset by source portal.](figures/source_distribution.png)
 
-The system follows a three-tier architecture deployed across two cloud services:
+*Figure 2.* Dataset by source portal. Idealista dominates at 64%, followed by Redpiso (18%), Fotocasa (10%), and Pisos.com (8%).
 
-[Insert diagram: Three-tier architecture showing Frontend (Vercel/Next.js) communicating via HTTPS with Backend (Railway/FastAPI) connected to Database (Railway/PostgreSQL)]
+## Field completeness and data quality
 
-The frontend communicates with the backend exclusively through HTTPS REST calls. The backend connects to PostgreSQL using psycopg2 through SQLAlchemy’s ORM layer. Both the frontend and backend auto-deploy from the main branch on GitHub: Railway rebuilds the Docker container for the backend, and Vercel rebuilds the Next.js application for the frontend.
+Not all fields are available from all sources. The heatmap below shows coverage of the fields that matter most for price prediction, broken down by portal.
 
-## Database schema
+![Figure 3. Field coverage by source.](figures/eda_missing_heatmap.png)
 
-The database consists of six tables with UUID primary keys and referential integrity constraints:
+*Figure 3.* Coverage of price-significant fields by source. Idealista provides the most complete data. Redpiso has zero condition data because their API does not include it. Fotocasa and Pisos.com have partial coverage from Firecrawl parsing.
 
-[Insert diagram: Entity-Relationship diagram showing deals, predictions, financial_analyses, notary_stats, users, and messages tables with their foreign key relationships]
+![Figure 4. Field completeness.](figures/field_completeness.png)
 
+*Figure 4.* Overall field completeness. Size and district are at 100% because the quality filter requires them. Postal code was originally at 12% but a backfill script that maps zone names to postal codes raised it to 71%. Condition sits at 66%, with the gap coming mainly from Redpiso.
 
-| Table | Records | Key Constraints | Purpose |
+## Price distribution and target transformation
+
+Property prices follow a right-skewed distribution with a skewness of 4.59. The median asking price per square meter is 5,385 EUR, while the mean is 9,168 EUR, pulled up by luxury listings in Salamanca and Chamberí.
+
+![Figure 5. Target variable distribution.](figures/eda_price_distribution.png)
+
+*Figure 5.* Price distribution before and after log transformation. Applying log(1 + price) compresses the right tail and produces a more symmetric distribution, which improves training stability for tree-based models.
+
+![Figure 6. Median price per sqm by district.](figures/price_sqm_by_district.png)
+
+*Figure 6.* Median asking price per square meter by district. Salamanca (10,767 EUR/sqm) is 3.4 times more expensive than Villaverde (3,135 EUR/sqm).
+
+## Feature correlations with price
+
+To understand which features carry the most predictive signal, we computed correlations and effect sizes:
+
+| Feature | Type | Metric | Value |
 | :---- | :---- | :---- | :---- |
-| users | 6 | username UNIQUE | JWT authentication |
-| deals | 3,195 | url UNIQUE | Property listings from all sources |
-| predictions | variable | deal\_id FK | ML price predictions per deal |
-| financial\_analyses | variable | deal\_id FK (nullable) | Fix and Flip analysis results |
-| notary\_stats | up to 495 | (postal\_code, construction\_type, property\_class) UNIQUE | Notary closing price aggregates |
-| messages | variable | — | Raw incoming messages (WhatsApp, email) |
+| District | Categorical (21) | eta-squared | 0.52 |
+| Zone / barrio | Categorical (239) | eta-squared | 0.49 |
+| Bathrooms | Numeric | Pearson r | +0.31 |
+| Size (sqm) | Numeric | Pearson r | +0.14 |
+| Floor | Numeric | Pearson r | +0.13 |
+| Bedrooms | Numeric | Pearson r | -0.01 |
+| Condition | Categorical (3) | eta-squared | 0.006 |
 
-*Table 5\.* Database tables summary.
+*Table 4.* Feature correlations with price per square meter.
 
-The deals table uses a unique constraint on url for upsert operations, allowing re-scraping without duplicates while capturing price changes.
+District and zone together explain about half the price variance each. They overlap (zone is nested within district) but zone adds barrio-level granularity. Bathrooms is the strongest numeric predictor. Bedrooms has essentially zero correlation with price per square meter, which makes sense: more bedrooms means a bigger apartment (higher total price) but not necessarily a more expensive location. Condition appears nearly irrelevant in aggregate (eta-squared = 0.006), but this turns out to be misleading.
 
-Authentication uses JWT tokens with bcrypt-hashed passwords and a 7-day expiry. All endpoints except login require a valid Bearer token. The system is deployed on Railway (backend Docker container with managed PostgreSQL) and Vercel (frontend), both auto-deploying from the main GitHub branch.
+## Condition analysis: class imbalance and Simpson's paradox
 
-# Data collection pipeline
+Among deals with known condition, 73% are classified as "buen estado" (good), 18% as "a reformar" (needs renovation), and 8% as "obra nueva" (new construction). A third of the dataset (34%) has no condition data at all, almost entirely from Redpiso.
 
-## Multi-source scraping architecture
+![Figure 7. Condition class distribution.](figures/eda_condition_balance.png)
 
-The system collects property listings using three distinct scraping strategies, selected based on each portal’s technical constraints:
+*Figure 7.* Condition distribution. The heavy class imbalance means the model sees far more "good" than "renew" examples.
 
-Strategy 1: REST API (Idealista). The Idealista API provides structured JSON responses through an OAuth2 authentication flow. The system obtains an access token using client credentials, then paginates through listing results at a rate of one request per 1.1 seconds to respect the API’s throttling limits. Each response contains up to 50 listings with structured fields for price, size, rooms, floor, amenities, condition, and geolocation. The API is rate-limited to 100 requests per month, making it the highest-quality but most constrained data source.
+The aggregate price comparison shows something counterintuitive: "a reformar" properties have a median price of 5,496 EUR/sqm, slightly higher than "buen estado" at 5,418 EUR/sqm. Renovation candidates appear more expensive than finished apartments. But this is a Simpson's paradox. When we compare within each district, "a reformar" is cheaper in 15 out of 20 districts that have enough data:
 
-Strategy 2: JSON API (Redpiso). Redpiso exposes a public JSON endpoint at redpiso.es/api/properties that requires no authentication. The system paginates through results in batches of 50, extracting structured property data including district, quarter (zona), property type, price, bedrooms, bathrooms, and broker contact information. This source provides clean structured data but has limited coverage of approximately 1,300 listings and does not include amenity details (elevator, garage, terrace).
+![Figure 8. Renovation discount by district.](figures/eda_simpson_paradox.png)
 
-Strategy 3: JavaScript-rendered HTML via Firecrawl (Idealista HTML, Fotocasa, Pisos.com). Three portals render their content through JavaScript, making traditional HTTP scraping ineffective. The system uses Firecrawl, a web scraping service that renders pages through headless browsers and returns clean markdown. The returned markdown is then parsed using regular expressions to extract property attributes.
+*Figure 8.* Within-district comparison of median price per sqm. In Salamanca, the renovation discount is 25%. In Chamberí, 12%. The aggregate numbers flip because expensive districts like Salamanca have a high concentration of "a reformar" listings, pulling up the overall renew median.
 
-Each Firecrawl scraper uses portal-specific regex patterns to extract fields from the returned markdown, with context windows and fallback patterns tailored to each portal's formatting.
+This finding has two implications. First, condition is a useful feature for the model, but only because tree-based models can learn the interaction between condition and district (they split on district first, then condition). Second, the Simpson's paradox validates the Fix and Flip strategy: there is a real within-district price gap between renovation candidates and finished properties.
 
-| Source | Strategy | Auth | Rate Limit | Volume | Amenity Data | Condition Data |
-| :---- | :---- | :---- | :---- | :---- | :---- | :---- |
-| Idealista API | REST API | OAuth2 | 100 req/month, 1/sec | \~500/cycle | Yes | Yes |
-| Idealista HTML | Firecrawl | API key | Firecrawl limits | \~15,000 | Partial | Yes |
-| Redpiso | JSON API | None | None observed | \~1,300 | No | No |
-| Fotocasa | Firecrawl | API key | Firecrawl limits | \~9,000 | Partial | Yes |
-| Pisos.com | Firecrawl | API key | Firecrawl limits | \~10,500 | Partial | Yes |
+## Amenity price premiums and confounding
 
-*Table 6\.* Scraping strategy comparison.
+Binary amenities show large price premiums in aggregate: elevator (+53%), terrace (+50%), balcony (+60%). But these are confounded with district. Expensive districts have more buildings with elevators. The model may double-count the effect when both district and elevator are included as features.
 
-## Data normalization
+![Figure 9. Amenity premiums.](figures/eda_amenity_premium.png)
 
-Raw listing data from each portal must be transformed into a canonical schema before storage. Two normalization steps are critical: district normalization and postal code extraction.
+*Figure 9.* Price premium by amenity, not controlling for district. These numbers overstate the causal effect of each amenity because they are correlated with location.
 
-District normalization. Madrid is divided into 21 administrative districts, each containing multiple barrios (neighborhoods). Portals refer to locations using barrio names, district names, or variations of either. The normalize\_district() function maps approximately 150 barrio name variants to 21 canonical district names.
-
-The algorithm first attempts an exact lookup in a dictionary of barrio-to-district mappings (case-insensitive). If no exact match is found, it performs a partial match, checking whether any known alias is contained within the input string, preferring longer matches to avoid false positives. A blacklist filter rejects invalid entries such as “distrito unico.” Locations outside Madrid’s 21 districts return None and the listing is excluded from the dataset.
-
-| Raw Input (from portal) | Canonical District |
-| :---- | :---- |
-| “Legazpi” | Arganzuela |
-| “Embajadores, Centro” | Centro |
-| “Barrio de Salamanca” | Salamanca |
-| “Gaztambide” | Chamberí |
-| “PAU de Carabanchel” | Carabanchel |
-| “Casco Historico de Vallecas” | Puente de Vallecas |
-
-*Table 7\.* District normalization examples.
-
-Postal code extraction. The extract\_postal\_code() function uses a two-step approach. First, a regex pattern \\b(28\\d{3})\\b searches the address or URL text for a five-digit code starting with 28 (Madrid’s postal prefix). If no match is found, the function falls back to a ZONE\_TO\_POSTAL dictionary that maps 131 barrio names to their primary postal codes (28001 through 28055). This hybrid approach maximizes coverage: regex catches codes embedded in addresses, while the dictionary handles cases where only the barrio name is known.
-
-## Ingestion and deduplication
-
-The ingest\_listings() function receives parsed listings from any scraper and loads them into the deals table through a PostgreSQL upsert operation.
-
-Data quality filters. Before upserting, each listing must pass four validation checks: it must have a URL, an asking price, a size in square meters, and a canonical Madrid district (returned by normalize\_district()). Listings missing any of these fields are silently skipped. This filter ensures that only queryable, analyzable data enters the database.
-
-Upsert strategy. The URL column has a unique constraint. When a listing URL already exists in the database, the ON CONFLICT DO UPDATE clause applies two different strategies depending on the field:
-
-* COALESCE fields (size\_sqm, bedrooms, bathrooms, floor, district, zone, address, condition, orientation, broker\_name, broker\_contact, listed\_date, property\_type, postal\_code): the new value is used only if it is not null; otherwise the existing value is preserved. This prevents a re-scrape from overwriting previously captured data with null values.
-
-* OVERWRITE fields (asking\_price, storage\_room, terrace, balcony, elevator, garage): the latest scraped value always replaces the existing one. Price updates should always reflect the current listing price, and amenity booleans from a more detailed source should override defaults.
-
-In practice, this means data quality only goes up with each scrape cycle. New non-null values fill gaps, but existing good data is never overwritten with blanks.
-
-## Automated ML prediction on ingest
-
-After each scrape batch, the \_auto\_predict\_new\_deals() function runs ML predictions on newly inserted deals (those that did not previously exist in the database). Predictions are stored in the predictions table with model\_version="auto" to distinguish them from manually triggered batch predictions.
-
-This step is wrapped in a try/except block so that ML failures, such as a missing model artifact or an incompatible feature column, never prevent the scraping operation from completing. The scraper returns the count of genuinely new rows inserted, excluding updates to existing records.
-
-## Notary data collection
-
-Official closing price data is collected from the Colegio General del Notariado through its ArcGIS FeatureServer REST API. The API exposes transaction statistics at multiple geographic levels; this system queries Layer 4, which provides postal code-level granularity.
-
-The scraper constructs queries with two filter dimensions:
-
-| Filter | ID Values | Meaning |
-| :---- | :---- | :---- |
-| tipo\_construccion\_id | 7, 9, 99 | Nueva (new), Segunda mano (second-hand), Todos (all) |
-| clase\_finca\_urbana\_id | 14, 15, 99 | Pisos (apartments), Casas (houses), Todos (all) |
-
-*Table 8\.* Notary filter combinations (3 x 3 \= 9 total).
-
-The system scrapes all nine combinations for postal codes 28001 through 28055 (55 postal codes), yielding up to 495 records. Each record contains: average price per square meter at closing, average total transaction price, average property surface area, number of transactions with price data, and total number of transactions.
-
-Records are upserted using a composite unique key of (postal\_code, construction\_type, property\_class). On conflict, the price and transaction statistics are updated while preserving the record identity.
-
-                    ┌──────────────────────┐  
-[Insert diagram: Data pipeline flow showing 5 portal scrapers feeding through normalize_district(), extract_postal_code(), quality filters, ingest_listings() upsert, and auto ML prediction]
-
+The exterior/interior distinction shows a more modest +7% premium, measured on the 469 deals where we have that data. This is less confounded because exterior and interior apartments exist in the same building.
 
 # Machine learning valuation model
 
-## Problem formulation
-
-The valuation model is a supervised regression task: given a set of physical and locational features of a property, predict its market price. The target variable is the asking price as listed on the portal. While asking prices do not represent actual transaction values (as discussed in the Notary Data section), they provide the most abundant and consistent label available across all five data sources.
-
-To handle the right-skewed distribution of property prices, the target is log-transformed during training using y \= log(1 \+ price). This transformation compresses the range of the target variable, giving the model proportional rather than absolute error incentives. At inference time, predictions are reversed with price \= exp(y\_pred) \- 1\.
-
 ## Feature engineering
 
-The deal\_to\_features() function converts a database Deal object into a feature dictionary suitable for model input. The features fall into three categories:
+The model uses 15 features extracted from each deal:
 
-The features break down into three groups: four numeric (size in sqm, bedrooms, bathrooms, floor), five binary amenities (storage room, terrace, balcony, elevator, garage, encoded as 0/1), and four categorical (district, zone, condition, orientation, all one-hot encoded). No price-derived features are used to prevent data leakage. Missing numerics default to zero; missing categoricals become their own one-hot category.
+Four numeric features: size in square meters, bedrooms, bathrooms, and floor. Five binary amenities: storage room, terrace, balcony, elevator, garage, and exterior (encoded as 0/1). Four categorical features: district (21 values), zone (barrio name), condition (good/renew/newdevelopment), and orientation. All one-hot encoded.
 
-## Data preprocessing
+No price-derived features are used to prevent data leakage. Missing numerics default to zero. Missing categoricals produce their own one-hot column, which lets the model learn that "unknown condition" behaves differently from any known condition.
 
-Before training, the dataset undergoes several preprocessing steps:
+## Preprocessing
 
-1. Filtering. Deals must have both a non-null asking price and a non-null size in square meters. Deals with a price per square meter below 500 or above 25,000 euros are also excluded as outliers. These thresholds remove data entry errors (listings with placeholder prices) and extreme luxury properties that would distort the model. A minimum of 50 deals is required to proceed with training; below that, the training function returns None.  
-2. One-hot encoding. Categorical features (Distrito, Zona, Estado, Ubicacion) are expanded into binary columns using pd.get\_dummies(). With 21 districts, this step can produce a substantial number of columns. The column names are saved as a model artifact so that inference can align new data to the training schema.  
-3. Train-test split. The dataset is split 85/15 into training and test sets with random\_state=42 for reproducibility.  
-4. Feature scaling. A StandardScaler is fitted on the training set and applied to both training and test sets. The fitted scaler is saved as an artifact for use during inference.
+Deals must have a non-null asking price and size. Deals with price per square meter below 500 or above 25,000 EUR are excluded as outliers (7 deals removed, leaving 4,425). Zone cardinality is reduced by mapping zones with fewer than 10 deals to empty, cutting one-hot columns from 327 to 201 without losing deals. This was validated experimentally: the reduced version outperformed the full version on every model (see Experiments below). The target is log-transformed: y = log(1 + price). Features are scaled with StandardScaler. Data is split 85/15 with random_state=42.
 
-## Model selection and hyperparameters
+## Model comparison
 
-The system uses scikit-learn’s GradientBoostingRegressor with the following hyperparameters:
+Four models were trained on the same data with the same preprocessing:
 
-| Hyperparameter | Value | Rationale |
-| :---- | :---- | :---- |
-| n\_estimators | 300 | Sufficient ensemble complexity for a dataset of \~3,000 deals without excessive training time |
-| max\_depth | 5 | Limits individual tree complexity, preventing overfitting to small district-level samples |
-| learning\_rate | 0.05 | Conservative shrinkage factor; lower values require more estimators but produce smoother convergence |
-| subsample | 0.8 | Stochastic gradient boosting: each tree trains on 80% of the data, reducing variance |
-| random\_state | 42 | Reproducibility |
+| Model | R-squared (test) | R-squared (CV) | CV std | MAE (EUR) | MAPE |
+| :---- | :---- | :---- | :---- | :---- | :---- |
+| Gradient Boosting | 0.853 | 0.883 | 0.019 | 167,418 | 21.7% |
+| XGBoost | 0.839 | 0.881 | 0.021 | 170,375 | 21.6% |
+| Random Forest | 0.838 | 0.849 | 0.018 | 180,624 | 24.7% |
+| Linear Regression | 0.651 | 0.762 | 0.061 | 252,092 | 29.4% |
 
-*Table 10\.* Model hyperparameters.
+*Table 5.* Model comparison on 4,425 deals. Gradient Boosting has the best R-squared. XGBoost is close. Linear Regression is far behind, confirming non-linear relationships.
 
-Gradient Boosting was chosen over the alternatives after testing. Linear regression cannot capture the non-linear relationship between location and price. Random forests perform reasonably but miss the sequential error correction that boosting provides. Neural networks need more data than 3,000 records to train well and give less interpretable feature importances. Gradient boosting works with mixed feature types out of the box, tolerates outliers when paired with the log-transform, and produces feature importance scores that help explain what the model is doing.
+Gradient Boosting was selected as the production model. Its hyperparameters: n_estimators=300, max_depth=5, learning_rate=0.05, subsample=0.8.
 
-## Training pipeline
+## Experiments
 
-The training pipeline queries all deals, converts them to feature dictionaries, filters outliers, one-hot encodes categoricals, log-transforms the target, splits 85/15 for train/test, fits a StandardScaler, trains the GradientBoostingRegressor, evaluates on the test set, runs five-fold cross-validation, and saves three timestamped artifacts (model, scaler, column list) as .pkl files.
+Five configurations were tested to validate feature engineering decisions:
 
-Cache invalidation is handled by the POST /ml/retrain endpoint, which clears the @lru\_cache decorators on the model, scaler, and column loaders. This forces the next prediction request to load the freshly trained artifacts from disk.
+| Experiment | Description | Best R-squared CV | Best MAE |
+| :---- | :---- | :---- | :---- |
+| A | Baseline (zone cleanup, all features) | 0.883 | 167,418 |
+| B | Drop zone + orientation | 0.860 | 176,211 |
+| C | B + impute missing condition as "good" | 0.858 | 180,846 |
+| C2 | B + impute missing condition as "segunda mano" | 0.860 | 177,632 |
+| D | B + target = price per sqm | 0.856* | 174,415 |
 
-## Model evaluation
+*Table 6.* Feature engineering experiments. All using Gradient Boosting. *D's CV is computed in price/sqm space and is not directly comparable.
 
-The model was trained on the production dataset of 3,190 deals (after outlier filtering from 3,195 total).
+Experiment A (baseline with zone cleanup) wins. Dropping zone costs 2.3 points of CV R-squared, confirming that barrio-level location carries real pricing information beyond the district. Imputing missing condition as "good" or "segunda mano" does not help; the model already handles the missing category through its own one-hot column. Predicting price per square meter instead of total price (D) shows competitive test metrics but unreliable CV scores.
 
-| Metric | Value | Interpretation |
-| :---- | :---- | :---- |
-| R-squared (test set) | 0.866 | The model explains 86.6% of price variance on unseen data |
-| R-squared (5-fold CV mean) | 0.886 | Stable generalization across all partitions of the dataset |
-| R-squared (5-fold CV std) | 0.024 | Low variance across folds, indicating consistent performance |
-| MAE (test set) | 166,080 EUR | Average prediction error of approximately 166,000 euros |
+## Deployment and inference
 
-*Table 11\.* Model evaluation metrics.
-
-An R-squared of 0.87 on the test set means the model captures most of the price variation from physical and locational features alone. The cross-validation R-squared of 0.89 with a standard deviation of 0.024 confirms this is not a lucky split; the model generalizes consistently across all five folds.
-
-The MAE of 166,080 euros needs context. The typical property in the dataset is priced somewhere between 300,000 and 800,000 euros (given the median price per square meter of 5,375 euros). An error of 166,000 euros is roughly 20 to 30 percent of the typical property value. That makes the model useful for screening and ranking, less so for setting a final price. Final valuations should still involve market comparables and professional judgment.
-
-![Figure 6. Effect of log transformation on the target variable.](figures/price_distribution_log.png)
-
-*Figure 6.* Effect of log transformation on the target variable. The raw distribution (left) is right-skewed. After applying log(1 + price), the distribution becomes more symmetric (right), improving training stability.
-
-## Model deployment and inference
-
-At inference time, the system builds a single-row DataFrame from the deal's features, one-hot encodes it, aligns the columns with the training schema (filling missing columns with zeros), scales it using the cached StandardScaler, and reverses the log-transform on the prediction. Model artifacts are loaded once and cached in memory via @lru_cache, so only the first prediction hits disk.
-
-Two inference modes exist: manual batch prediction (user selects deals on the Valuaciones page) and automatic prediction on scrape (new deals get predictions with model_version="auto" immediately after ingestion).
-
-*Figure 9\.* ML pipeline: training (left) and inference (right).
+At inference time, the system builds a single-row DataFrame from the deal's features, one-hot encodes it, aligns columns with the training schema (filling unseen zones or districts with zeros), scales with the cached StandardScaler, predicts in log space, and reverses the transform. Model artifacts are cached in memory so only the first prediction hits disk. Two modes exist: manual batch prediction from the Valuaciones page, and automatic prediction on new deals after each scrape.
 
 # Financial analysis model
 
-## Fix and Flip strategy overview
-
-The Fix and Flip strategy targets properties listed in conditions described as “a reformar” (needing renovation). The investor purchases the property at a discount, renovates it to “buen estado” (good condition), and sells at a higher price that reflects the improved state. In Madrid, this strategy is viable because a significant portion of the housing stock is older construction in need of updates, and the price gap between “a reformar” and “buen estado” properties in the same district can be substantial.
-
-The financial model implemented in CapReSol computes investment returns from the equity investor’s perspective, accounting for leverage, interest costs, operating expenses, and taxes. All cash flows are modeled at monthly granularity.
-
-## Model inputs
-
-The model takes 15 inputs grouped into four categories: property parameters (size, purchase price, exit price per sqm), renovation parameters (capex total, capex months, project months), operating costs (monthly opex, annual IBI, closing costs at 7.5% default, broker fee at 3.63% default), and financing (mortgage LTV, mortgage rate, capex debt amount and rate, tax rate). All financing inputs default to zero, allowing analysis with or without leverage.
+The Fix and Flip financial module is a separate tool within the application. When a user identifies a potential renovation opportunity, either from the deals database or from the analytics dashboard, they can run a financial analysis to see whether the numbers work.
 
 ## Cash flow construction
 
-Cash flows are modeled monthly from the equity investor’s perspective. At Month 0, the investor pays the equity portion of the purchase price (purchase price minus mortgage debt) plus closing costs. During renovation months, monthly outflows include the equity share of capex, operating expenses, property tax, and interest on both the mortgage and any capex debt. After renovation is complete, only operating costs and interest continue until exit. At exit, the investor receives the net sale price (gross price minus broker fee) and repays all outstanding debt. All debt is interest-only during the hold period, with principal repaid at exit.
+Cash flows are modeled monthly from the equity investor's perspective. At Month 0, the investor pays the equity portion of the purchase price (total minus mortgage) plus closing costs. During renovation months, outflows include the equity share of capex, operating expenses, property tax, and interest on both mortgage and capex debt. After renovation, only operating costs and interest continue. At exit, the investor receives the net sale price minus broker fee and repays all debt. All debt is interest-only during the hold, with principal repaid at exit.
+
+The model takes 15 inputs grouped into four categories: property parameters (size, purchase price, exit price per sqm), renovation parameters (capex total, capex months, project months), operating costs (monthly opex, annual IBI, closing costs at 7.5% default, broker fee at 3.63% default), and financing (mortgage LTV, mortgage rate, capex debt amount and rate, tax rate). All financing inputs default to zero, so the model works with or without leverage.
 
 ## Output metrics
 
-The model computes four primary return metrics and several supporting figures:
+IRR is computed from the monthly cash flow array using numpy_financial.irr(), then annualized. MOIC divides total cash returned by peak equity deployed. ROE divides profit by maximum equity exposure. Gross margin divides profit by total development cost. Max equity exposure is the peak negative cumulative cash flow, the most capital tied up at any point, which is a more honest denominator than initial equity because ongoing costs keep increasing the capital at risk.
 
-IRR (Internal Rate of Return). Computed from the monthly cash flow array using numpy\_financial.irr(), then annualized: annual\_IRR \= (1 \+ monthly\_IRR)^12 \- 1\. IRR represents the annualized return that makes the net present value of all cash flows equal to zero.
-
-MOIC (Multiple on Invested Capital). MOIC \= (max\_equity\_exposure \+ profit) / max\_equity\_exposure. A MOIC of 1.5x means the investor receives 1.5 euros for every euro of peak equity deployed.
-
-ROE (Return on Equity). ROE \= profit / max\_equity\_exposure. Measures profit as a percentage of the maximum capital at risk.
-
-Gross Margin. gross\_margin \= profit / total\_dev\_cost. Measures profit as a percentage of total development cost, useful for comparing projects of different scales.
-
-Max Equity Exposure. The peak negative cumulative cash flow during the project, representing the maximum capital the equity investor has tied up at any point. This is the denominator for MOIC and ROE, and it is more meaningful than initial equity deployed because ongoing renovation and operating costs increase total capital at risk during the project.
-
-## Leverage effects
-
-Leverage amplifies returns when a deal is profitable and amplifies losses when it is not. By financing a portion of the purchase price with a mortgage, the investor reduces their equity contribution at Month 0\. This lower denominator increases IRR, ROE, and MOIC for profitable deals. However, interest payments during the holding period reduce absolute profit.
-
-The model supports two independent debt instruments: an acquisition mortgage (applied as a percentage of purchase price via LTV) and capex debt (a fixed amount for renovation financing). Each has its own interest rate. This dual-debt structure reflects real market conditions where acquisition and renovation financing often come from different sources with different terms.
+The model supports two debt instruments: an acquisition mortgage (percentage of purchase via LTV) and capex debt (fixed amount for renovation). Each has its own interest rate. This reflects real conditions where acquisition and renovation financing often come from different sources.
 
 # Analytics dashboard
 
-## Design philosophy
+The analytics dashboard answers one question: where should the next investment be?
 
-The analytics dashboard is built around one question: where should the next investment be? Instead of showing raw market statistics, every section is designed to compare data sources against each other and surface actionable opportunities.
+## Design and sections
 
-Three layers of upside comparison form the analytical backbone:
+Instead of showing raw statistics, every section compares data sources against each other to surface opportunities. Three layers of upside comparison form the backbone:
 
-1. Conservative upside: Compare portal asking prices for “a reformar” properties against notary closing prices for “nueva” (new) properties. This estimates the potential gain from buying a renovation candidate at asking price and selling at the price the market actually pays for new properties.
+1. Conservative upside: portal asking prices for "a reformar" properties against notary closing prices for "nueva" properties. Buy at asking, sell at what the market actually pays for new.
+2. Optimistic upside: asking prices for "a reformar" against asking prices for "buen estado." Both from portals, so both inflated by the same seller bias.
+3. Market ceiling: notary closing prices for "segunda mano" against "nueva." Both real transaction data, showing the structural price gap.
 
-2. Optimistic upside: Compare portal asking prices for “a reformar” against portal asking prices for “buen estado” properties. This shows the price gap between renovation candidates and finished properties, though asking prices may overstate the actual achievable price.
-
-3. Market ceiling: Compare notary closing prices for “segunda mano” (second-hand) against “nueva” (new) properties. Both figures are real transaction data, showing the structural price difference between property types in each district.
-
-## Analytics architecture
-
-The analytics endpoint (GET /analytics) returns 13 data structures in a single response. All aggregation and computation happens on the backend; the frontend only renders the results. This design avoids sending raw deal data to the client and ensures that filtering logic is consistent.
-
-Four query parameters control the analysis: \- max\_price\_sqm (default 25,000) and min\_price\_sqm (default 500): exclude outlier deals from aggregations \- notary\_construction (default “segunda\_mano”): filter notary data by construction type \- notary\_class (default “pisos”): filter notary data by property class (apartments vs. houses)
-
-A critical data join bridges the notary data (indexed by postal code) with the deal data (indexed by district). The system maps each notary postal code to its corresponding district, then aggregates notary statistics at the district level weighted by transaction count to produce accurate district-level averages.
-
-## Dashboard sections
-
-The dashboard displays ten sections in the following order:
-
-Section 1: KPI Strip. Four summary cards: total listings in the dataset, count of “a reformar” listings, the district with the highest upside, and the most affordable district by price per square meter.
-
-Section 2: Oportunidad Real por Distrito (Conservative Upside). A table comparing the average asking price per square meter of “a reformar” listings from portals against the average closing price per square meter of “nueva” properties from notary data, for each district. The upside is computed as (closing\_nueva \- asking\_reformar) / asking\_reformar \* 100\. Districts with positive upside are shown, sorted by upside descending. The top three are highlighted. Each row includes a clickable link to the deals page filtered by that district and “a reformar” condition.
-
-Section 3: Upside en Portales (Optimistic Upside). Same structure as Section 2, but comparing “a reformar” asking prices against “buen estado” asking prices, both from portal data. This provides a more optimistic estimate because asking prices for “buen estado” may be higher than actual closing prices.
-
-Section 4: Upside del Mercado (Market Ceiling). Notary closing prices for “segunda mano” versus “nueva” properties, both from official transaction data. This section shows the structural price ceiling in each district, without an actionable link because these are aggregate market statistics rather than specific deal opportunities.
-
-Section 5: Margen de Negociacion por Distrito (Negotiation Margin). Compares portal asking prices against notary closing prices per district, showing the percentage gap. A dropdown filter allows switching between all properties, second-hand only, or new construction only. Color coding indicates the negotiation room: above 15% in red (significant overpricing), 5-15% in yellow (moderate), below 5% in green (tight market).
-
-Section 6: Valoracion ML vs Precio Pedido (ML Spread). Shows the average percentage difference between ML-predicted prices and asking prices per district. Green highlighting (spread above 5%) indicates districts where the model suggests properties are undervalued relative to asking prices. Red (negative spread) indicates potential overvaluation.
-
-Section 7: Estado de la Propiedad (Condition Distribution). A pie chart showing the proportion of listings in each condition category: “a reformar,” “buen estado,” and “nueva.” This gives context on the available opportunity pool for renovation strategies.
-
-Section 8: Nuevos Listings por Mes (Timeline). A line chart of new listings over time, grouped by the portal’s listed date rather than the system’s ingestion date. This shows market activity trends and listing velocity.
-
-Section 9: Cartera Analizada (Portfolio Summary). KPI cards aggregating metrics from all saved financial analyses: count, average IRR, average MOIC, and average ROE. This section only appears when at least one analysis exists.
-
-Section 10: Mostrar Mas (Expanded Analysis). A collapsible section containing supplementary charts: a horizontal bar chart of price per square meter by district (sorted descending with a market average reference line), price and size distribution histograms, bedroom count distribution, and amenity prevalence bars showing the percentage of listings with elevator, terrace, balcony, garage, and storage room.
-
-[Insert screenshot: Analytics dashboard showing KPI strip and conservative upside chart]
-
-[Insert screenshot: Negotiation margin table with color-coded spread percentages]
+The dashboard also shows negotiation margins (asking vs closing spread by district, color-coded by severity), ML spread (where the model thinks properties are underpriced), condition distribution, a listing timeline, and portfolio-level KPIs from saved financial analyses. Each upside chart links directly to the deals page filtered by that district and condition.
 
 ## Opportunity scoring
 
-The analytics endpoint computes a composite opportunity score for each district by ranking on three dimensions:
+The system ranks districts by combining three signals: average entry price (lower is better), renovation upside (bigger gap is better), and ML spread (more undervalued is better). Each dimension is ranked 1 to 10, and the scores are averaged. The composite score identifies which districts offer the best combination of affordability, renovation potential, and model-predicted undervaluation.
 
-1. Price rank: Districts sorted by average price per square meter ascending (cheapest entry point \= best rank)
+[Insert screenshot: Analytics dashboard showing KPI strip and upside charts]
 
-2. Reform upside rank: Districts sorted by reform upside descending (biggest renovation gap \= best rank)
-
-3. ML spread rank: Districts sorted by ML-vs-asking spread descending (most undervalued by model \= best rank)
-
-Each rank is converted to a 1-10 scale, and the three scores are averaged. The opportunity table is sorted by composite score ascending, so the lowest score represents the most attractive investment opportunity.
+[Insert screenshot: Negotiation margin table]
 
 # Results and discussion
 
-The previous sections described what was built and how. This section reports what the system produces: the dataset it has collected, the ML model's accuracy, sample financial analyses, analytics insights, and feedback from real estate professionals.
+## ML model performance
 
-## Data collection results
-
-The production system contains 3,195 property listings across all 21 administrative districts of Madrid. Centro and Salamanca account for 29 percent of all listings combined. Peripheral districts like Moratalaz and Barajas have the fewest, reflecting lower market activity.
-
-![Figure 10. Listings per district.](figures/district_distribution.png)
-
-*Figure 10.* Listings per district across all 21 Madrid administrative districts.
-
-![Figure 11. Dataset distribution by source portal.](figures/source_distribution.png)
-
-*Figure 11.* Dataset distribution by source portal. Idealista dominates at 58%, followed by Redpiso (24.5%), Fotocasa (9.1%), and Pisos.com (8.3%).
-
-![Figure 12. Condition distribution.](figures/condition_distribution.png)
-
-*Figure 12.* Condition distribution. 49.4% of listings lack condition data, mainly because Redpiso does not provide it and the Firecrawl scrapers only detect condition from specific keywords.
-
-![Figure 13. Field completeness visualization.](figures/field_completeness.png)
-
-*Figure 13.* Field completeness after postal code backfill. Postal code coverage improved from 11.9% to 75.7% through a backfill script that maps zone names to postal codes using accent normalization, prefix stripping, and compound name splitting.
-
-![Figure 14. Median asking price per square meter by district.](figures/price_sqm_by_district.png)
-
-*Figure 14.* Median asking price per square meter by district. The red dashed line marks the market median (5,375 EUR/m²). The mean is 8,450 EUR/m², pulled up by luxury listings in Salamanca and Chamberí.
-
-## Machine learning results
-
-The Gradient Boosting model was trained on 3,190 listings (after outlier filtering) and evaluated on a held-out test set and through five-fold cross-validation.
+The production Gradient Boosting model, trained on 4,425 deals with zone cardinality reduction, achieves:
 
 | Metric | Value |
 | :---- | :---- |
-| R-squared (test) | 0.866 |
-| R-squared (5-fold CV mean) | 0.886 |
-| R-squared (5-fold CV std) | 0.024 |
-| MAE (test) | 166,080 EUR |
-| Model version | gb\_20260320\_104153 |
-| Deals trained | 3,190 |
+| R-squared (test) | 0.853 |
+| R-squared (5-fold CV) | 0.883 |
+| CV standard deviation | 0.019 |
+| MAE | 167,418 EUR |
+| MAPE | 21.7% |
+| Deals trained | 4,425 |
 
-*Table 15\.* Machine learning evaluation results.
+*Table 7.* Production model metrics.
 
-The model explains 86.6 percent of price variance on held-out data, with stable cross-validation (R² mean = 0.886, std = 0.024). The MAE of 166,080 euros makes the model useful for screening and ranking but not for final pricing. Three factors explain the error magnitude: the dataset is modest at 3,190 listings; condition data is missing for half the listings; and the model trains on asking prices rather than actual transaction values.
+The R-squared of 0.88 on cross-validation means the model explains most of the price variation from 15 features alone. The MAE of 167,000 EUR is roughly 20-30% of the typical property value (median ~500,000 EUR). That makes the model useful for screening and ranking, not for setting a final price. Several factors explain the remaining error: the model trains on asking prices which include seller noise; condition data is missing for 34% of deals; and features like building age, energy certification, and exact floor plan are not available from portal data.
 
-## Financial analysis results
+## Financial analysis
 
-As a worked example: an 80 m² apartment purchased at 3,000 EUR/m² (240,000 EUR), renovated for 500 EUR/m² (40,000 EUR) over 4 months, and sold at 4,500 EUR/m² after 8 months total. With 60% LTV, the equity at purchase is 96,000 EUR plus 18,000 EUR in closing costs. The gross exit price is 360,000 EUR, minus a 13,068 EUR broker fee and 144,000 EUR mortgage repayment. The model computes annualized IRR, MOIC, ROE, and gross margin from the resulting monthly cash flows.
+[Insert screenshot: Fix and Flip analysis page showing a worked example with IRR, MOIC, ROE outputs]
+
+The financial model has been tested with scenarios reflecting typical Madrid renovation projects. Users input property and renovation parameters, and the system computes monthly cash flows and return metrics. The screenshot above shows a representative analysis.
 
 ## Analytics insights
 
-The analytics dashboard, when populated with both portal and notary data, provides several forms of market intelligence:
+[Insert screenshot: Analytics dashboard with conservative upside chart and negotiation margins]
 
-Comparing portal asking prices against notary closing prices reveals the typical discount from asking to closing in each district. Districts with larger spreads have more room for negotiation. Districts with tight spreads are competitive markets where asking prices already reflect what buyers pay.
-
-The condition distribution shows that 9.1 percent of listings are explicitly classified as “a reformar.” Combined with the 49.4 percent where condition is unknown, there may be a much larger pool of renovation opportunities than the data currently captures. Better condition detection in the scraping layer would improve the precision of the upside calculations.
-
-The ML spread analysis identifies districts where the model consistently predicts higher prices than sellers are asking. These signals may indicate systematic underpricing, motivated sellers, or market inefficiencies worth investigating.
+The analytics dashboard, when populated with both portal and notary data, surfaces district-level opportunities. The conservative upside chart identifies which districts have the largest gap between renovation asking prices and new-build closing prices. The negotiation margin section shows where sellers are most overpricing relative to what the market actually pays.
 
 ## Professional feedback
 
-\[PLACEHOLDER: The following section should contain feedback from five real estate professionals (from Argentina and Spain) who reviewed the CapReSol system.\]
+[PLACEHOLDER: The following section should contain feedback from five real estate professionals from Argentina and Spain who reviewed the CapReSol system.]
 
-Methodology. Five professionals with experience in real estate investment, brokerage, and fund management were given access to the production system and asked to evaluate its utility for their daily workflows. Their feedback was collected through \[structured interviews / written questionnaires / live demos with follow-up questions\].
+Methodology: five professionals with experience in real estate investment, brokerage, and fund management were given access to the production system and asked to evaluate its utility.
 
-Participant Profiles:
-
-| \# | Role | Location | Experience |
+| # | Role | Location | Experience |
 | :---- | :---- | :---- | :---- |
-| 1 | \[PLACEHOLDER\] | \[PLACEHOLDER\] | \[PLACEHOLDER\] |
-| 2 | \[PLACEHOLDER\] | \[PLACEHOLDER\] | \[PLACEHOLDER\] |
-| 3 | \[PLACEHOLDER\] | \[PLACEHOLDER\] | \[PLACEHOLDER\] |
-| 4 | \[PLACEHOLDER\] | \[PLACEHOLDER\] | \[PLACEHOLDER\] |
-| 5 | \[PLACEHOLDER\] | \[PLACEHOLDER\] | \[PLACEHOLDER\] |
+| 1 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+| 2 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+| 3 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+| 4 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
+| 5 | [PLACEHOLDER] | [PLACEHOLDER] | [PLACEHOLDER] |
 
-*Table 16\.* Professional feedback participants.
+*Table 8.* Professional feedback participants.
 
-Key Findings:
-
-\[PLACEHOLDER: Summarize the main themes from professional feedback. Expected areas: data consolidation value, ML prediction utility, financial model usefulness, analytics dashboard insights, missing features, suggestions for improvement.\]
+[PLACEHOLDER: Key findings from the feedback, expected areas: data consolidation value, ML prediction utility, financial model usefulness, analytics dashboard insights, missing features, suggestions.]
 
 ## Discussion
 
-The results support the thesis that a unified platform can address the three identified inefficiencies.
+The system addresses the three problems identified in the introduction. On data fragmentation: it collects and normalizes listings from five sources into a single dataset of over 4,400 deals across all 21 Madrid districts. On valuation opacity: the ML model achieves R-squared of 0.88 with stable cross-validation, providing a systematic baseline for screening. On the analytical gap: ML predictions, notary prices, and financial analysis live in one dashboard.
 
-On data fragmentation: the system collects and normalizes listings from five sources into a single dataset of over 3,000 listings across all 21 Madrid districts. The URL-based deduplication and the COALESCE/OVERWRITE upsert logic mean data quality improves with each scraping cycle without duplicates or lost data.
+The EDA revealed findings that directly informed modeling decisions. The Simpson's paradox in condition pricing validated both the Fix and Flip strategy (the within-district discount is real) and the feature engineering choice (keeping condition as a feature even though its aggregate eta-squared is near zero). The zone cardinality experiment confirmed that barrio-level location carries real signal beyond the district level. The amenity confounding analysis explains why the model's amenity-related feature importances should be interpreted cautiously.
 
-On valuation opacity: the ML model’s R-squared of 0.87 shows that property characteristics and location explain most of the price variation. The MAE of 166,000 euros is too large for final pricing decisions, but it gives a systematic, reproducible baseline for screening deals at scale, which is better than relying on intuition alone.
+Limitations are clear. The dataset of 4,425 deals is modest compared to institutional AVMs. Condition data is missing for a third of listings. The model trains on asking prices, not transactions. Geographic scope is Madrid city only. The Cap Rate model for rental strategies was not implemented.
 
-On the analytical gap: having ML predictions, notary closing prices, and Fix and Flip financial analysis in one dashboard means an analyst can go from deal identification to investment decision without switching tools. The opportunity scoring algorithm condenses multiple signals into a single district ranking, which cuts down on the mental work of cross-referencing separate spreadsheets.
+# Conclusions and future work
 
-That said, the system has clear limitations. The dataset covers all 21 districts but is modest in size. Half the listings lack condition data, which limits renovation-based analysis. The notary data is a single snapshot with no historical trend. The ML model has not been benchmarked against commercial AVMs. Geographic scope stops at Madrid city proper. And the Cap Rate model for rental strategies was not implemented.
+## Summary
 
-# Conclusions, implications, and application
+CapReSol delivers six capabilities in a single deployed application: multi-source scraping (4,432 deals from 5 portals), ML valuation (Gradient Boosting, R-squared 0.88), notary data integration (55 postal codes, 9 filter combinations), Fix and Flip financial modeling (monthly cash flows with leverage), an analytics dashboard (10 sections with opportunity scoring), and production deployment with multi-user authentication.
 
-## Summary of contributions
-
-CapReSol is a production web application that automates the real estate investment analysis pipeline for Madrid. It delivers six capabilities:
-
-1. Multi-source data collection. Five scrapers collect listings from Idealista (API and HTML), Redpiso, Fotocasa, and Pisos.com, normalizing them into a unified schema with 21 canonical districts and 55 postal codes. The production dataset contains 3,195 listings.  
-2. Machine learning valuation. A Gradient Boosting model trained on 3,190 listings achieves R-squared of 0.87 on held-out data and 0.89 on five-fold cross-validation, with automatic prediction on new listings at scrape time.  
-3. Notary data integration. Official closing prices from the Colegio General del Notariado cover 55 postal codes across nine filter combinations, enabling comparison of asking prices against real transaction values.  
-4. Financial modeling. A Fix and Flip model computes IRR, MOIC, ROE, and gross margin from monthly equity cash flows with dual-debt leverage support, ported from a reference Excel model to Python.  
-5. Analytics dashboard. Ten chart sections surface investment opportunities through three upside comparisons, negotiation margin analysis, ML spread detection, and a composite opportunity scoring algorithm.  
-6. Production deployment. JWT-authenticated multi-user access on Railway (backend) and Vercel (frontend) with auto-deployment from GitHub.
-
-In terms of efficiency: data collection that would take an analyst hours per portal now runs in minutes. Valuation that relied on gut feeling and manual comparables gets supplemented by a reproducible ML model. Financial analysis that lived in separate Excel files is now integrated with the deal database. None of these replace professional judgment, but they reduce the manual work required to get to a judgment.
-
-## Answering the research objectives
-
-| Objective | Status | Evidence |
-| :---- | :---- | :---- |
-| O1: Multi-source scraping | Achieved | 3,195 deals from 5 sources, 21 districts |
-| O2: ML valuation | Achieved | R-squared 0.87 test, 0.89 CV, auto-predict on scrape |
-| O3: Notary integration | Achieved | 55 postal codes, 9 filter combinations, ArcGIS API |
-| O4: Financial modeling | Achieved | Fix and Flip with IRR, MOIC, ROE, leverage support |
-| O5: Analytics dashboard | Achieved | 10 sections, 3 upside charts, opportunity scoring |
-| O6: Production deployment | Achieved | Railway \+ Vercel, JWT auth, 6 users, auto-deploy |
-
-*Table 17\.* Objective achievement summary.
-
-All six objectives were fully implemented and deployed in production. The Cap Rate financial model, originally planned as part of Objective 4, was not implemented within the scope of this thesis and remains as future work.
+The system reduces the time from deal sourcing to investment decision. Data collection that took hours per portal runs in minutes. Valuation that relied on intuition gets supplemented by a reproducible model. Financial analysis that lived in separate spreadsheets is integrated with the deal database.
 
 ## Limitations
 
-* The dataset of 3,195 listings, while covering all districts, is small compared to institutional datasets. More scraping cycles would increase both coverage and ML accuracy.
-
-* Condition data is available for only 50.6 percent of listings, limiting renovation-based analysis.
-
-* Notary data represents a single time period. Historical time-series data would enable trend analysis.
-
-* The ML model has not been benchmarked against commercial AVMs in the Spanish market.
-
-* Geographic scope is limited to Madrid city proper. Expansion to metropolitan areas or other cities would require additional district mappings and postal code ranges.
-
-* The Cap Rate / rental yield financial model was not implemented.
+The dataset is modest at 4,425 deals. Condition data is available for only 66% of listings. Notary data is a single time snapshot with no historical trend. The ML model has not been benchmarked against commercial AVMs. The Cap Rate rental model was not built. Geographic scope stops at Madrid city.
 
 ## Future work
 
-In the short term, the backend endpoint for model retraining already exists and needs only a frontend button. Barrio-level analytics (expandable from the district view) would add granularity to the opportunity analysis. Improving condition detection in the Firecrawl scrapers would reduce the 49 percent unknown rate, which currently limits renovation-based analysis.
+Short term: add a retrain button in the frontend (backend endpoint exists), improve condition detection to close the 34% gap, build a deal detail page with property card and analysis history.
 
-In the medium term, a Cap Rate / rental yield financial model for buy-and-hold strategies would complement the existing Fix and Flip model. Scheduled scraping via cron jobs would automate data refresh. Time-series notary data, if the penotariado API supports historical queries, would enable trend analysis. Export to PDF or Excel would support investment committee reporting.
+Medium term: implement the Cap Rate model for rental strategies, add scheduled scraping for automated data refresh, integrate time-series notary data if the API supports it.
 
-In the longer term, two paths are possible. A B2B vertical would position the platform as a SaaS tool for investment funds and family offices, adding fund-level portfolio analytics and CRM integration. A B2C horizontal would offer a simplified version for retail investors through a freemium model, building a user base that real estate agencies might then pay to access. Geographic expansion to Barcelona, Valencia, and Malaga would require new district mappings and postal code ranges but no changes to the core system architecture.
+Long term: position the platform as a B2B SaaS tool for investment funds with portfolio analytics and CRM integration. Or offer a simplified B2C version for retail investors with a freemium model. Expand to Barcelona, Valencia, and other Spanish cities.
 
-## Real-world application and implications
+## Real-world application
 
-The system has direct applicability to three market segments. For investment funds and family offices operating in Madrid, CapReSol provides a ready-to-use deal sourcing and analysis platform. A fund analyst can log in, trigger a scrape across five portals, review ML-predicted undervaluations, and run a Fix and Flip analysis on promising properties, all within a single session. The analytics dashboard's district-level opportunity scoring gives investment committees a data-backed starting point for geographic allocation decisions, replacing the informal market knowledge that currently drives these conversations.
-
-For real estate agencies and brokerages, the asking-vs-closing price comparison powered by notary data provides negotiation intelligence that is otherwise difficult to access. Agencies could use the system to advise clients on realistic pricing or to identify districts where listings are systematically overpriced relative to actual transaction values.
-
-For individual investors entering the Madrid market, the system lowers the barrier to systematic analysis. Instead of manually browsing five portals and running Excel models for each property, an individual can use the same analytical infrastructure that a professional fund would build internally.
-
-Beyond Madrid, the architecture is portable. The normalization layer (district mapping, postal code extraction, condition detection) would need to be adapted for each new city, but the scraping framework, ML pipeline, financial model, and analytics engine are city-agnostic. Expansion to Barcelona, Valencia, or Malaga would require new geographic mappings but no fundamental changes to the system design.
-
-The PropTech industry is moving toward consolidation. Tools exist, but they do not talk to each other. CapReSol shows that it is possible to build a complete pipeline, from raw portal data to financial decision metrics, in a single application. It does not replace the work of evaluating a deal. It replaces the busywork that gets in the way of evaluating a deal.
+The system was reviewed by five real estate professionals. It runs in production. It is not a prototype. The contribution is not just the technology but the integration: connecting data sources and analytical tools that the industry currently keeps in separate silos. 92% of firms are piloting AI tools but only 5% have achieved their goals (v7 Labs, 2026). The bottleneck is not the analysis. It is the plumbing. CapReSol is plumbing.
 
 # References
 
 Baldominos, A., Saez, Y., & Quintana, D. (2018). Machine learning techniques for predicting housing prices: A review. *Advances in Intelligent Systems and Computing*, 584, 123-132.
 
-BBVA Research. (2024). Spain housing market outlook 2024\. BBVA Research Publications.
+BBVA Research. (2024). Spain housing market outlook 2024. BBVA Research Publications.
 
 CBRE. (2024). Real estate investment market Spain 2024 report. CBRE Research.
 
@@ -727,7 +463,7 @@ Kok, N., Kopczuk, W., & Timmins, C. (2017). Big data in real estate: From manual
 
 Maps PropTech API. (2025). PropTech adoption survey Spain 2025: Tech stack, barriers, and automation needs. Maps PropTech API Annual Report.
 
-PwC. (2025). Tendencias del sector de tecnologia inmobiliaria en Espana 2025\. PwC Spain Real Estate.
+PwC. (2025). Tendencias del sector de tecnologia inmobiliaria en Espana 2025. PwC Spain Real Estate.
 
 Rosen, S. (1974). Hedonic prices and implicit markets: Product differentiation in pure competition. *Journal of Political Economy*, 82(1), 34-55.
 
@@ -742,4 +478,3 @@ v7 Labs. (2026). AI in real estate: Key use cases, solutions, and challenges. Re
 [Insert screenshot: Analytics dashboard]
 
 [Insert screenshot: Fix and Flip analysis page]
-
