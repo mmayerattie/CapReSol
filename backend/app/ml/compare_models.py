@@ -44,11 +44,16 @@ def _prepare_df(rows, zone_threshold=0):
     return df
 
 
-def _run_experiment(df, y, label=""):
+def _run_experiment(df, y, label="", target_is_psqm=False, sizes=None):
     """Train all models on a prepared DataFrame and return results."""
     X_train, X_test, y_train, y_test = train_test_split(
         df, y, test_size=0.15, random_state=42
     )
+
+    # If target is price/sqm, we need the corresponding sizes for the test set
+    # to convert back to total price for comparable MAE/RMSE
+    if target_is_psqm and sizes is not None:
+        _, sizes_test = train_test_split(sizes, test_size=0.15, random_state=42)
 
     scaler = StandardScaler()
     X_train_s = scaler.fit_transform(X_train)
@@ -81,8 +86,14 @@ def _run_experiment(df, y, label=""):
         model.fit(X_train_s, y_train)
 
         y_pred_log = model.predict(X_test_s)
-        y_pred = np.expm1(y_pred_log)
-        y_test_orig = np.expm1(y_test)
+
+        if target_is_psqm and sizes is not None:
+            # Convert price/sqm predictions back to total price
+            y_pred = np.expm1(y_pred_log) * sizes_test
+            y_test_orig = np.expm1(y_test) * sizes_test
+        else:
+            y_pred = np.expm1(y_pred_log)
+            y_test_orig = np.expm1(y_test)
 
         r2 = float(r2_score(y_test_orig, y_pred))
         mae = float(mean_absolute_error(y_test_orig, y_pred))
@@ -112,22 +123,72 @@ def compare(db_session=None, experiment: str = "a") -> dict:
         return {"error": "Not enough data", "deals": len(rows)}
 
     y_raw = np.array(targets, dtype=float)
-    y = np.log1p(y_raw)
+    sizes = np.array([r.get("Metros Cuadrados", 1) or 1 for r in rows], dtype=float)
 
-    if experiment == "b":
-        print(f"=== Experiment B: Zone cleanup (threshold={MIN_ZONE_FREQUENCY}) ===")
-        df = _prepare_df(rows, zone_threshold=MIN_ZONE_FREQUENCY)
-        desc = f"Zones with <{MIN_ZONE_FREQUENCY} deals mapped to empty"
+    # Deep copy rows so mutations don't leak across experiments
+    import copy
+    exp_rows = copy.deepcopy(rows)
+
+    if experiment == "a":
+        # Baseline: zone cleanup, all features
+        desc = "Baseline (zone cleanup, all features)"
+        df = _prepare_df(exp_rows, zone_threshold=MIN_ZONE_FREQUENCY)
+        y = np.log1p(y_raw)
+
+    elif experiment == "b":
+        # Drop zone + orientation, keep district + exterior
+        desc = "Drop zone + orientation, keep district + exterior"
+        for r in exp_rows:
+            r["Zona"] = ""
+            r["Ubicacion"] = ""
+        df = _prepare_df(exp_rows, zone_threshold=0)
+        y = np.log1p(y_raw)
+
+    elif experiment == "c":
+        # Same as B + impute missing condition as "good"
+        desc = "Drop zone + orientation, impute missing condition as good"
+        for r in exp_rows:
+            r["Zona"] = ""
+            r["Ubicacion"] = ""
+            if not r.get("Estado") or r["Estado"] == "":
+                r["Estado"] = "good"
+        df = _prepare_df(exp_rows, zone_threshold=0)
+        y = np.log1p(y_raw)
+
+    elif experiment == "c2":
+        # Same as B + impute missing condition as "segunda_mano" (treated as good)
+        # "segunda mano" is a distinct category — not renew, not new, just used
+        desc = "Drop zone + orientation, impute missing condition as segunda_mano"
+        for r in exp_rows:
+            r["Zona"] = ""
+            r["Ubicacion"] = ""
+            if not r.get("Estado") or r["Estado"] == "":
+                r["Estado"] = "segunda_mano"
+        df = _prepare_df(exp_rows, zone_threshold=0)
+        y = np.log1p(y_raw)
+
+    elif experiment == "d":
+        # Same as B but predict price per sqm
+        desc = "Drop zone + orientation, target = price/sqm"
+        for r in exp_rows:
+            r["Zona"] = ""
+            r["Ubicacion"] = ""
+        df = _prepare_df(exp_rows, zone_threshold=0)
+        y = np.log1p(y_raw / sizes)
+
     else:
-        print("=== Experiment A: Baseline (all zones) ===")
-        df = _prepare_df(rows, zone_threshold=0)
-        desc = "All zones kept as-is"
+        return {"error": f"Unknown experiment: {experiment}"}
 
-    print(f"  Features: {df.shape[1]} columns")
-    results = _run_experiment(df, y, label=f"[{experiment.upper()}]")
+    print(f"=== Experiment {experiment.upper()}: {desc} ===")
+    print(f"  Deals: {len(exp_rows)}, Features: {df.shape[1]} columns")
+
+    # For experiment D, we need to convert predictions back to total price for comparable metrics
+    results = _run_experiment(df, y, label=f"[{experiment.upper()}]",
+                              target_is_psqm=(experiment == "d"),
+                              sizes=sizes if experiment == "d" else None)
 
     return {
-        "deals_trained": len(rows),
+        "deals_trained": len(exp_rows),
         "experiment": experiment,
         "description": desc,
         "features": df.shape[1],
