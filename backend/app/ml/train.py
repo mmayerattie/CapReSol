@@ -88,6 +88,14 @@ def train(db_session=None) -> Optional[dict]:
 
     # Build DataFrame and one-hot encode categoricals
     df = pd.DataFrame(rows)
+
+    # Map rare zones (< 10 deals) to empty to reduce one-hot dimensionality
+    if "Zona" in df.columns:
+        zone_counts = df["Zona"].value_counts()
+        rare_zones = set(zone_counts[zone_counts < 10].index)
+        df.loc[df["Zona"].isin(rare_zones), "Zona"] = ""
+        logger.info("Zone cleanup: %d rare zones mapped to empty", len(rare_zones))
+
     for col in ["Distrito", "Zona", "Estado", "Ubicacion"]:
         if col in df.columns:
             df = pd.get_dummies(df, columns=[col], drop_first=False)
