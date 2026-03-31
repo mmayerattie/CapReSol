@@ -381,9 +381,9 @@ export default function ValuacionesPage() {
                 <th className="px-4 py-3 text-left">Distrito</th>
                 <th className="px-4 py-3 text-right">m2</th>
                 <th className="px-4 py-3 text-right">Ask Price</th>
-                <th className="px-4 py-3 text-right">Ask EUR/m2</th>
+                <th className="px-4 py-3 text-right">Ask €/m2</th>
                 <th className="px-4 py-3 text-right">Tasacion ML</th>
-                <th className="px-4 py-3 text-right">ML EUR/m2</th>
+                <th className="px-4 py-3 text-right">ML €/m2</th>
                 <th className="px-4 py-3 text-left">Spread</th>
                 <th className="px-4 py-3 text-left">Estado</th>
                 <th className="px-4 py-3 text-left">Fecha</th>
@@ -413,10 +413,10 @@ export default function ValuacionesPage() {
                     </td>
                     <td className="px-4 py-2 text-gray-600 text-xs">{p.district || '—'}</td>
                     <td className="px-4 py-2 text-right">{fmt(p.size_sqm)}</td>
-                    <td className="px-4 py-2 text-right font-medium">{p.asking_price ? `EUR${fmt(p.asking_price)}` : '—'}</td>
-                    <td className="px-4 py-2 text-right text-gray-500">{askPsqm ? `EUR${fmt(askPsqm)}` : '—'}</td>
-                    <td className="px-4 py-2 text-right font-semibold text-emerald-700">{`EUR${fmt(p.predicted_price)}`}</td>
-                    <td className="px-4 py-2 text-right text-emerald-600">{mlPsqm ? `EUR${fmt(mlPsqm)}` : '—'}</td>
+                    <td className="px-4 py-2 text-right font-medium">{p.asking_price ? `€${fmt(p.asking_price)}` : '—'}</td>
+                    <td className="px-4 py-2 text-right text-gray-500">{askPsqm ? `€${fmt(askPsqm)}` : '—'}</td>
+                    <td className="px-4 py-2 text-right font-semibold text-emerald-700">{`€${fmt(p.predicted_price)}`}</td>
+                    <td className="px-4 py-2 text-right text-emerald-600">{mlPsqm ? `€${fmt(mlPsqm)}` : '—'}</td>
                     <td className="px-4 py-2">
                       <SpreadBadge ask={p.asking_price} ml={p.predicted_price} />
                     </td>
@@ -446,7 +446,7 @@ export default function ValuacionesPage() {
                           onClick={() => setConfirmDeleteId(p.id)}
                           title="Eliminar tasacion"
                           className="text-gray-300 hover:text-red-500 transition-colors"
-                        >&#128465;</button>
+                        ><span className="text-sm">x</span></button>
                       )}
                     </td>
                   </tr>
