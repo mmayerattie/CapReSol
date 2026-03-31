@@ -21,19 +21,31 @@ def _mape(y_true, y_pred):
     return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
 
 
-def compare(db_session=None) -> dict:
-    rows, targets = build_dataset(db_session)
-    if len(rows) < 50:
-        return {"error": "Not enough data", "deals": len(rows)}
+MIN_ZONE_FREQUENCY = 10
 
+
+def _prepare_df(rows, zone_threshold=0):
+    """Build DataFrame with optional rare-zone cleanup."""
     df = pd.DataFrame(rows)
+
+    # Map rare zones to empty string to reduce one-hot dimensionality
+    if zone_threshold > 0 and "Zona" in df.columns:
+        zone_counts = df["Zona"].value_counts()
+        rare_zones = set(zone_counts[zone_counts < zone_threshold].index)
+        original_zones = df["Zona"].nunique()
+        df.loc[df["Zona"].isin(rare_zones), "Zona"] = ""
+        kept_zones = df["Zona"].nunique()
+        print(f"  Zone cleanup: {original_zones} → {kept_zones} zones (threshold={zone_threshold})")
+
     for col in ["Distrito", "Zona", "Estado", "Ubicacion"]:
         if col in df.columns:
             df = pd.get_dummies(df, columns=[col], drop_first=False)
 
-    y_raw = np.array(targets, dtype=float)
-    y = np.log1p(y_raw)
+    return df
 
+
+def _run_experiment(df, y, label=""):
+    """Train all models on a prepared DataFrame and return results."""
     X_train, X_test, y_train, y_test = train_test_split(
         df, y, test_size=0.15, random_state=42
     )
@@ -43,7 +55,6 @@ def compare(db_session=None) -> dict:
     X_test_s = scaler.transform(X_test)
     X_all_s = scaler.transform(df)
 
-    # Define models
     models = {
         "Linear Regression": LinearRegression(),
         "Random Forest": RandomForestRegressor(
@@ -55,7 +66,6 @@ def compare(db_session=None) -> dict:
         ),
     }
 
-    # Try importing XGBoost
     try:
         from xgboost import XGBRegressor
         models["XGBoost"] = XGBRegressor(
@@ -67,11 +77,9 @@ def compare(db_session=None) -> dict:
 
     results = []
     for name, model in models.items():
-        logger.info("Training %s...", name)
-        print(f"Training {name}...")
+        print(f"  {label} Training {name}...")
         model.fit(X_train_s, y_train)
 
-        # Test set predictions (reverse log-transform)
         y_pred_log = model.predict(X_test_s)
         y_pred = np.expm1(y_pred_log)
         y_test_orig = np.expm1(y_test)
@@ -81,7 +89,6 @@ def compare(db_session=None) -> dict:
         rmse = float(np.sqrt(mean_squared_error(y_test_orig, y_pred)))
         mape = _mape(np.array(y_test_orig), np.array(y_pred))
 
-        # 5-fold CV
         cv = cross_val_score(model, X_all_s, y, cv=5, scoring="r2")
 
         results.append({
@@ -93,12 +100,44 @@ def compare(db_session=None) -> dict:
             "r2_cv_mean": round(float(cv.mean()), 4),
             "r2_cv_std": round(float(cv.std()), 4),
         })
-        print(f"  R²={r2:.4f}  MAE={mae:,.0f}  RMSE={rmse:,.0f}  MAPE={mape:.2f}%  CV={cv.mean():.4f}±{cv.std():.4f}")
+        print(f"    R²={r2:.4f}  MAE={mae:,.0f}  CV={cv.mean():.4f}±{cv.std():.4f}")
 
     results.sort(key=lambda x: -x["r2_cv_mean"])
+    return results
+
+
+def compare(db_session=None) -> dict:
+    rows, targets = build_dataset(db_session)
+    if len(rows) < 50:
+        return {"error": "Not enough data", "deals": len(rows)}
+
+    y_raw = np.array(targets, dtype=float)
+    y = np.log1p(y_raw)
+
+    # Experiment A: baseline (all zones as-is)
+    print("=== Experiment A: Baseline (all zones) ===")
+    df_a = _prepare_df(rows, zone_threshold=0)
+    print(f"  Features: {df_a.shape[1]} columns")
+    results_a = _run_experiment(df_a, y, label="[A]")
+
+    # Experiment B: rare zone cleanup (zones with < 10 deals → empty)
+    print(f"\n=== Experiment B: Zone cleanup (threshold={MIN_ZONE_FREQUENCY}) ===")
+    df_b = _prepare_df(rows, zone_threshold=MIN_ZONE_FREQUENCY)
+    print(f"  Features: {df_b.shape[1]} columns")
+    results_b = _run_experiment(df_b, y, label="[B]")
 
     return {
         "deals_trained": len(rows),
-        "models": results,
-        "best_model": results[0]["model"],
+        "experiment_a_baseline": {
+            "description": "All zones kept as-is",
+            "features": df_a.shape[1],
+            "models": results_a,
+            "best": results_a[0]["model"],
+        },
+        "experiment_b_zone_cleanup": {
+            "description": f"Zones with <{MIN_ZONE_FREQUENCY} deals mapped to empty",
+            "features": df_b.shape[1],
+            "models": results_b,
+            "best": results_b[0]["model"],
+        },
     }
