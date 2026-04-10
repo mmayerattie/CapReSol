@@ -50,10 +50,10 @@ def _run_experiment(df, y, label="", target_is_psqm=False, sizes=None):
         df, y, test_size=0.15, random_state=42
     )
 
-    # If target is price/sqm, we need the corresponding sizes for the test set
+    # If target is price/sqm, we need the corresponding sizes for train/test sets
     # to convert back to total price for comparable MAE/RMSE
     if target_is_psqm and sizes is not None:
-        _, sizes_test = train_test_split(sizes, test_size=0.15, random_state=42)
+        sizes_train, sizes_test = train_test_split(sizes, test_size=0.15, random_state=42)
 
     scaler = StandardScaler()
     X_train_s = scaler.fit_transform(X_train)
@@ -100,6 +100,20 @@ def _run_experiment(df, y, label="", target_is_psqm=False, sizes=None):
         rmse = float(np.sqrt(mean_squared_error(y_test_orig, y_pred)))
         mape = _mape(np.array(y_test_orig), np.array(y_pred))
 
+        # Train metrics (for overfitting diagnostics)
+        y_train_pred_log = model.predict(X_train_s)
+        if target_is_psqm and sizes is not None:
+            y_train_pred = np.expm1(y_train_pred_log) * sizes_train
+            y_train_orig = np.expm1(y_train) * sizes_train
+        else:
+            y_train_pred = np.expm1(y_train_pred_log)
+            y_train_orig = np.expm1(y_train)
+
+        r2_train = float(r2_score(y_train_orig, y_train_pred))
+        mae_train = float(mean_absolute_error(y_train_orig, y_train_pred))
+        rmse_train = float(np.sqrt(mean_squared_error(y_train_orig, y_train_pred)))
+        mape_train = _mape(np.array(y_train_orig), np.array(y_train_pred))
+
         cv = cross_val_score(model, X_all_s, y, cv=5, scoring="r2")
 
         results.append({
@@ -108,6 +122,10 @@ def _run_experiment(df, y, label="", target_is_psqm=False, sizes=None):
             "mae": round(mae, 0),
             "rmse": round(rmse, 0),
             "mape": round(mape, 2),
+            "r2_train": round(r2_train, 4),
+            "mae_train": round(mae_train, 0),
+            "rmse_train": round(rmse_train, 0),
+            "mape_train": round(mape_train, 2),
             "r2_cv_mean": round(float(cv.mean()), 4),
             "r2_cv_std": round(float(cv.std()), 4),
         })
